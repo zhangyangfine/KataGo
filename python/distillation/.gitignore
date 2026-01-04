@@ -1,0 +1,11 @@
+# Distillation training data and outputs
+positions/
+targets/
+data/
+training_output/
+exported/
+test_run/
+
+# Keep only the scripts
+!*.py
+!*.sh

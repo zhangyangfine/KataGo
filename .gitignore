@@ -78,6 +78,7 @@ katago_contribute/
 tmpsgf/
 watchgame.txt
 models/
+!cpp/tests/models/
 python/startposesupload.txt
 for_release/
 
