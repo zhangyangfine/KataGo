@@ -69,8 +69,18 @@ jobs:
         uses: actions/cache@v4
         id: cache-abseil
         with:
-          path: ios-build/install/ios/lib/libabsl*.a
-          key: ios-abseil-${{ runner.os }}-${{ hashFiles('ios-build/scripts/build_abseil_ios.sh') }}
+          path: |
+            ios-build/install/ios/lib/libabsl*.a
+            ios-build/install/ios/lib/cmake/absl
+            ios-build/install/ios/include/absl
+            ios-build/install/host/lib/libabsl*.a
+            ios-build/install/host/lib/cmake/absl
+            ios-build/install/host/include/absl
+            ios-build/install/ios/lib/libutf8*.a
+            ios-build/install/ios/lib/cmake/utf8_range
+            ios-build/install/host/lib/libutf8*.a
+            ios-build/install/host/lib/cmake/utf8_range
+          key: ios-abseil-v2-${{ runner.os }}-${{ hashFiles('ios-build/scripts/build_abseil_ios.sh') }}
 
       - name: Cache Protobuf build
         uses: actions/cache@v4
@@ -78,8 +88,12 @@ jobs:
         with:
           path: |
             ios-build/install/ios/lib/libprotobuf*.a
+            ios-build/install/ios/lib/cmake/protobuf
+            ios-build/install/ios/include/google
             ios-build/install/host/bin/protoc
-          key: ios-protobuf-${{ runner.os }}-${{ hashFiles('ios-build/scripts/build_protobuf_ios.sh') }}
+            ios-build/install/host/lib/libprotobuf*.a
+            ios-build/install/host/lib/cmake/protobuf
+          key: ios-protobuf-v2-${{ runner.os }}-${{ hashFiles('ios-build/scripts/build_protobuf_ios.sh') }}
 
       - name: Build Abseil for iOS
         if: steps.cache-abseil.outputs.cache-hit != 'true'
@@ -88,12 +102,31 @@ jobs:
           chmod +x build_abseil_ios.sh
           ./build_abseil_ios.sh
 
+      - name: Verify Abseil installation
+        run: |
+          echo "=== Abseil iOS installation ==="
+          ls -la ios-build/install/ios/lib/libabsl*.a 2>/dev/null | head -10 || echo "No Abseil iOS libs"
+          ls -la ios-build/install/ios/lib/cmake/absl/ 2>/dev/null | head -5 || echo "No Abseil iOS cmake"
+          echo ""
+          echo "=== Abseil Host installation ==="
+          ls -la ios-build/install/host/lib/libabsl*.a 2>/dev/null | head -10 || echo "No Abseil host libs"
+          ls -la ios-build/install/host/lib/cmake/absl/ 2>/dev/null | head -5 || echo "No Abseil host cmake"
+
       - name: Build Protobuf for iOS
         if: steps.cache-protobuf.outputs.cache-hit != 'true'
         run: |
           cd ios-build/scripts
           chmod +x build_protobuf_ios.sh
           ./build_protobuf_ios.sh
+
+      - name: Verify Protobuf installation
+        run: |
+          echo "=== Protobuf iOS installation ==="
+          ls -la ios-build/install/ios/lib/libprotobuf*.a 2>/dev/null || echo "No Protobuf iOS libs"
+          ls -la ios-build/install/ios/lib/cmake/protobuf/ 2>/dev/null | head -5 || echo "No Protobuf iOS cmake"
+          echo ""
+          echo "=== Host protoc ==="
+          ls -la ios-build/install/host/bin/protoc 2>/dev/null || echo "No host protoc"
 
       - name: Build katagocoreml-cpp for iOS
         run: |
