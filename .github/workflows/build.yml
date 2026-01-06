@@ -58,6 +58,19 @@ jobs:
     runs-on: macos-latest
     permissions:
       contents: read
+    strategy:
+      matrix:
+        include:
+          - backend: OPENCL
+            extra_deps: "opencl-headers"
+            extra_tap: ""
+            extra_package: ""
+            artifact_name: katago-macos-opencl
+          - backend: COREML
+            extra_deps: ""
+            extra_tap: "chinchangyang/katagocoreml-cpp"
+            extra_package: "katagocoreml"
+            artifact_name: katago-macos-coreml
 
     steps:
       - name: Checkout code
@@ -65,52 +78,11 @@ jobs:
 
       - name: Install dependencies
         run: |
-          brew install zlib libzip opencl-headers
-      - name: Cache CMake build
-        uses: actions/cache@v4
-        with:
-          path: |
-            cpp/CMakeCache.txt
-            cpp/CMakeFiles
-            cpp/build.ninja
-            cpp/.ninja_deps
-            cpp/.ninja_log
-          key: ${{ runner.os }}-cmake-${{ hashFiles('**/CMakeLists.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-cmake-
-      - name: Configure CMake
-        working-directory: cpp
-        run: |
-          cmake . -G Ninja -DUSE_BACKEND=OPENCL -DCMAKE_BUILD_TYPE=Release
-      - name: Build
-        working-directory: cpp
-        run: |
-          ninja
-      - name: Run tests
-        working-directory: cpp
-        run: |
-          ./katago runtests
-      - name: Upload artifact
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-        uses: actions/upload-artifact@v4
-        with:
-          name: katago-macos-opencl
-          path: cpp/katago
-
-  build-macos-coreml:
-    runs-on: macos-latest
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          brew install ninja zlib libzip
-          brew tap chinchangyang/katagocoreml-cpp
-          brew install katagocoreml
+          brew install zlib libzip ${{ matrix.extra_deps }}
+          if [ -n "${{ matrix.extra_tap }}" ]; then
+            brew tap ${{ matrix.extra_tap }}
+            brew install ${{ matrix.extra_package }}
+          fi
 
       - name: Cache CMake build
         uses: actions/cache@v4
@@ -121,30 +93,28 @@ jobs:
             cpp/build.ninja
             cpp/.ninja_deps
             cpp/.ninja_log
-          key: ${{ runner.os }}-cmake-coreml-${{ hashFiles('**/CMakeLists.txt') }}
+          key: ${{ runner.os }}-cmake-${{ matrix.backend }}-${{ hashFiles('**/CMakeLists.txt') }}
           restore-keys: |
-            ${{ runner.os }}-cmake-coreml-
+            ${{ runner.os }}-cmake-${{ matrix.backend }}-
 
       - name: Configure CMake
         working-directory: cpp
         run: |
-          cmake . -G Ninja -DUSE_BACKEND=COREML -DCMAKE_BUILD_TYPE=Release
+          cmake . -G Ninja -DUSE_BACKEND=${{ matrix.backend }} -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
         working-directory: cpp
-        run: |
-          ninja
+        run: ninja
 
       - name: Run tests
         working-directory: cpp
-        run: |
-          ./katago runtests
+        run: ./katago runtests
 
       - name: Upload artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         uses: actions/upload-artifact@v4
         with:
-          name: katago-macos-coreml
+          name: ${{ matrix.artifact_name }}
           path: cpp/katago
 
   build-windows:
