@@ -46,17 +46,27 @@ echo ""
 echo "Step 1: Building host protoc..."
 echo ""
 
+# Verify Abseil is built for host
+if [ ! -d "${HOST_INSTALL_DIR}/lib/cmake/absl" ]; then
+    echo "Error: Host Abseil not found at ${HOST_INSTALL_DIR}"
+    echo "Please run build_abseil_ios.sh first."
+    exit 1
+fi
+
 mkdir -p build-host
 cd build-host
 
 cmake .. \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX="${HOST_INSTALL_DIR}" \
+    -DCMAKE_PREFIX_PATH="${HOST_INSTALL_DIR}" \
     -Dprotobuf_BUILD_TESTS=OFF \
     -Dprotobuf_BUILD_EXAMPLES=OFF \
     -Dprotobuf_BUILD_PROTOBUF_BINARIES=ON \
     -Dprotobuf_BUILD_LIBPROTOC=OFF \
     -Dprotobuf_ABSL_PROVIDER=package \
+    -Dabsl_DIR="${HOST_INSTALL_DIR}/lib/cmake/absl" \
+    -Dutf8_range_DIR="${HOST_INSTALL_DIR}/lib/cmake/utf8_range" \
     -DABSL_PROPAGATE_CXX_STD=ON \
     -DCMAKE_CXX_STANDARD=17
 
@@ -77,6 +87,13 @@ echo ""
 echo "Step 2: Building protobuf for iOS arm64..."
 echo ""
 
+# Verify Abseil is built for iOS
+if [ ! -d "${INSTALL_DIR}/lib/cmake/absl" ]; then
+    echo "Error: iOS Abseil not found at ${INSTALL_DIR}"
+    echo "Please run build_abseil_ios.sh first."
+    exit 1
+fi
+
 mkdir -p build-ios
 cd build-ios
 
@@ -85,6 +102,7 @@ cmake .. \
     -DCMAKE_TOOLCHAIN_FILE="${TOOLCHAIN_FILE}" \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX="${INSTALL_DIR}" \
+    -DCMAKE_PREFIX_PATH="${INSTALL_DIR}" \
     -Dprotobuf_BUILD_TESTS=OFF \
     -Dprotobuf_BUILD_EXAMPLES=OFF \
     -Dprotobuf_BUILD_PROTOBUF_BINARIES=OFF \
@@ -92,6 +110,8 @@ cmake .. \
     -Dprotobuf_BUILD_LIBPROTOC=OFF \
     -Dprotobuf_BUILD_SHARED_LIBS=OFF \
     -Dprotobuf_ABSL_PROVIDER=package \
+    -Dabsl_DIR="${INSTALL_DIR}/lib/cmake/absl" \
+    -Dutf8_range_DIR="${INSTALL_DIR}/lib/cmake/utf8_range" \
     -DABSL_PROPAGATE_CXX_STD=ON \
     -DCMAKE_CXX_STANDARD=17 \
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON
