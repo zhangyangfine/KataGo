@@ -34,6 +34,11 @@ ios-build/
 │   ├── build_abseil_ios.sh   # Abseil build
 │   ├── build_protobuf_ios.sh # Protobuf build
 │   └── build_katagocoreml_ios.sh  # katagocoreml build
+├── swift/                    # Swift/C++ interop files
+│   ├── KataGoModelConverter.swift  # Pure Swift API
+│   ├── katagocoreml-swift.h  # C++ header for Swift
+│   ├── katagocoreml-swift.cpp # C++ wrapper implementation
+│   └── module.modulemap      # C++ module for Swift import
 ├── toolchains/
 │   └── ios.toolchain.cmake   # CMake iOS toolchain
 ├── patches/
@@ -101,8 +106,9 @@ See [docs/XCODE_INTEGRATION.md](docs/XCODE_INTEGRATION.md) for detailed Xcode se
 1. Add all `.a` files from `install/ios/lib/` to Xcode
 2. Add `install/ios/include/` to Header Search Paths
 3. Link required frameworks (CoreML, Metal, etc.)
-4. Create Objective-C++ bridge (see documentation)
-5. Use from Swift via the bridge
+4. Enable Swift/C++ interoperability (`-cxx-interoperability-mode=default`)
+5. Add Swift wrapper files from `swift/` directory
+6. Use pure Swift API (`KataGoModelConverter`)
 
 ## Capabilities
 

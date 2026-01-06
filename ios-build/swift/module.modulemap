@@ -1,0 +1,9 @@
+// Module map for katagocoreml-cpp C++ interoperability with Swift
+// This enables Swift to directly import and use C++ types
+
+module KataGoCoreMLCxx {
+    header "katagocoreml-swift.h"
+    requires cplusplus
+
+    export *
+}

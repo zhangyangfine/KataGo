@@ -1,13 +1,44 @@
 # KataGo iOS Integration Guide
 
-This guide explains how to integrate KataGo with CoreML model conversion into a SwiftUI iOS app.
+This guide explains how to integrate KataGo with CoreML model conversion into a SwiftUI iOS app using **Swift/C++ interoperability** (Swift 5.9+).
 
 ## Prerequisites
 
-- macOS 13.0+
+- macOS 14.0+ (Sonoma)
 - Xcode 15.0+
 - iOS 17.0+ deployment target
 - CMake 3.18+: `brew install cmake`
+- Ninja: `brew install ninja`
+
+## Architecture
+
+This integration uses **Swift 5.9+ bidirectional C++ interoperability** - no Objective-C++ bridging required:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    SwiftUI App                          │
+│                         │                               │
+│                         ▼                               │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │         KataGoModelConverter.swift              │   │
+│  │         (Pure Swift API)                        │   │
+│  └─────────────────────────────────────────────────┘   │
+│                         │                               │
+│            Swift/C++ Interop (Swift 5.9+)              │
+│                         │                               │
+│                         ▼                               │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │         katagocoreml-swift.h/.cpp               │   │
+│  │         (C++ wrapper layer)                     │   │
+│  └─────────────────────────────────────────────────┘   │
+│                         │                               │
+│                         ▼                               │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │         libkatagocoreml.a                       │   │
+│  │         (Static library)                        │   │
+│  └─────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────┘
+```
 
 ## Step 1: Build iOS Dependencies
 
@@ -34,18 +65,35 @@ Output location: `ios-build/install/ios/`
 3. Interface: SwiftUI
 4. Language: Swift
 
-### 2.2 Add C++ Static Libraries
+### 2.2 Configure Build Settings for C++ Interop
 
-1. In Project Navigator, select your project
-2. Select your target → Build Phases → Link Binary With Libraries
-3. Click "+" → Add Other → Add Files
-4. Navigate to `ios-build/install/ios/lib/`
-5. Add all `.a` files:
+**Enable C++ Interoperability:**
+
+1. Select your target → Build Settings
+2. Search for "C++ and Objective-C Interoperability"
+3. Set to: **C++ / Objective-C++**
+
+Or add to "Other Swift Flags":
+```
+-cxx-interoperability-mode=default
+```
+
+**Set C++ Language Standard:**
+
+1. Search for "C++ Language Dialect"
+2. Set to: **C++17 [-std=c++17]**
+
+### 2.3 Add Static Libraries
+
+1. Select target → Build Phases → Link Binary With Libraries
+2. Click "+" → Add Other → Add Files
+3. Navigate to `ios-build/install/ios/lib/`
+4. Add all `.a` files:
    - `libkatagocoreml.a`
    - `libprotobuf.a`
    - `libabsl_*.a` (multiple files)
 
-### 2.3 Add System Frameworks
+### 2.4 Add System Frameworks
 
 Add these frameworks in Link Binary With Libraries:
 - CoreML.framework
@@ -55,331 +103,194 @@ Add these frameworks in Link Binary With Libraries:
 - CoreFoundation.framework
 - Accelerate.framework
 - libz.tbd
+- libc++.tbd
 
-### 2.4 Configure Header Search Paths
+### 2.5 Configure Search Paths
 
-1. Select target → Build Settings
-2. Search for "Header Search Paths"
-3. Add: `$(PROJECT_DIR)/../ios-build/install/ios/include` (recursive)
-
-### 2.5 Configure Library Search Paths
-
-1. Search for "Library Search Paths"
-2. Add: `$(PROJECT_DIR)/../ios-build/install/ios/lib`
-
-### 2.6 Enable C++ Interop
-
-1. Search for "C++ and Objective-C Interoperability"
-2. Set to: "C++ / Objective-C++"
-
-Or add to Other C++ Flags: `-fcxx-modules -fmodules`
-
-## Step 3: Create Bridging Header
-
-### 3.1 Create Header File
-
-Create `KataGo-Bridging-Header.h`:
-
-```objc
-#ifndef KataGo_Bridging_Header_h
-#define KataGo_Bridging_Header_h
-
-#import "KataGoBridge.h"
-
-#endif
+**Header Search Paths:**
+```
+$(PROJECT_DIR)/../ios-build/install/ios/include
+$(PROJECT_DIR)/../ios-build/swift
 ```
 
-### 3.2 Configure Bridging Header
-
-1. Build Settings → Search for "Objective-C Bridging Header"
-2. Set to: `$(PROJECT_DIR)/KataGoApp/KataGo-Bridging-Header.h`
-
-## Step 4: Create Objective-C++ Bridge
-
-### 4.1 KataGoBridge.h
-
-```objc
-// KataGoBridge.h
-#import <Foundation/Foundation.h>
-
-NS_ASSUME_NONNULL_BEGIN
-
-/// Model information returned by getModelInfo
-@interface KataGoModelInfo : NSObject
-@property (nonatomic, readonly) NSString *name;
-@property (nonatomic, readonly) int version;
-@property (nonatomic, readonly) int numInputChannels;
-@property (nonatomic, readonly) int numInputGlobalChannels;
-@property (nonatomic, readonly) int trunkNumChannels;
-@property (nonatomic, readonly) int numBlocks;
-@end
-
-/// Options for model conversion
-@interface KataGoConversionOptions : NSObject
-@property (nonatomic) int boardXSize;           // Default: 19
-@property (nonatomic) int boardYSize;           // Default: 19
-@property (nonatomic) BOOL useFP16;             // Default: YES
-@property (nonatomic) BOOL optimizeIdentityMask; // Default: YES (for exact board size)
-@property (nonatomic) int specificationVersion; // Default: 8 (iOS 17+)
-@end
-
-/// Main bridge class for KataGo model conversion
-@interface KataGoModelConverter : NSObject
-
-/// Get information about a KataGo model file
-+ (nullable KataGoModelInfo *)getModelInfoFromPath:(NSString *)modelPath
-                                             error:(NSError **)error;
-
-/// Convert a KataGo model (.bin.gz) to CoreML format (.mlpackage)
-/// @param inputPath Path to input .bin.gz model
-/// @param outputPath Path for output .mlpackage directory
-/// @param options Conversion options (nil for defaults)
-/// @param error Error output
-/// @return YES on success, NO on failure
-+ (BOOL)convertModelAtPath:(NSString *)inputPath
-                    toPath:(NSString *)outputPath
-                   options:(nullable KataGoConversionOptions *)options
-                     error:(NSError **)error;
-
-/// Convert model with progress callback
-+ (BOOL)convertModelAtPath:(NSString *)inputPath
-                    toPath:(NSString *)outputPath
-                   options:(nullable KataGoConversionOptions *)options
-                  progress:(void (^)(float progress, NSString *stage))progressCallback
-                     error:(NSError **)error;
-
-@end
-
-NS_ASSUME_NONNULL_END
+**Library Search Paths:**
+```
+$(PROJECT_DIR)/../ios-build/install/ios/lib
 ```
 
-### 4.2 KataGoBridge.mm
-
-```objc
-// KataGoBridge.mm
-#import "KataGoBridge.h"
-#include <katagocoreml/KataGoConverter.hpp>
-#include <string>
-
-// MARK: - KataGoModelInfo
-
-@implementation KataGoModelInfo {
-    NSString *_name;
-    int _version;
-    int _numInputChannels;
-    int _numInputGlobalChannels;
-    int _trunkNumChannels;
-    int _numBlocks;
-}
-
-- (instancetype)initWithName:(NSString *)name
-                     version:(int)version
-            numInputChannels:(int)numInputChannels
-      numInputGlobalChannels:(int)numInputGlobalChannels
-            trunkNumChannels:(int)trunkNumChannels
-                   numBlocks:(int)numBlocks {
-    self = [super init];
-    if (self) {
-        _name = [name copy];
-        _version = version;
-        _numInputChannels = numInputChannels;
-        _numInputGlobalChannels = numInputGlobalChannels;
-        _trunkNumChannels = trunkNumChannels;
-        _numBlocks = numBlocks;
-    }
-    return self;
-}
-
-@end
-
-// MARK: - KataGoConversionOptions
-
-@implementation KataGoConversionOptions
-
-- (instancetype)init {
-    self = [super init];
-    if (self) {
-        _boardXSize = 19;
-        _boardYSize = 19;
-        _useFP16 = YES;
-        _optimizeIdentityMask = YES;
-        _specificationVersion = 8;
-    }
-    return self;
-}
-
-@end
-
-// MARK: - KataGoModelConverter
-
-@implementation KataGoModelConverter
-
-+ (nullable KataGoModelInfo *)getModelInfoFromPath:(NSString *)modelPath
-                                             error:(NSError **)error {
-    try {
-        std::string path = [modelPath UTF8String];
-        auto info = katagocoreml::KataGoConverter::getModelInfo(path);
-
-        return [[KataGoModelInfo alloc] initWithName:[NSString stringWithUTF8String:info.name.c_str()]
-                                             version:info.version
-                                    numInputChannels:info.numInputChannels
-                              numInputGlobalChannels:info.numInputGlobalChannels
-                                    trunkNumChannels:info.trunkNumChannels
-                                           numBlocks:info.numBlocks];
-    } catch (const std::exception& e) {
-        if (error) {
-            *error = [NSError errorWithDomain:@"KataGoErrorDomain"
-                                         code:1
-                                     userInfo:@{NSLocalizedDescriptionKey:
-                                         [NSString stringWithUTF8String:e.what()]}];
-        }
-        return nil;
-    }
-}
-
-+ (BOOL)convertModelAtPath:(NSString *)inputPath
-                    toPath:(NSString *)outputPath
-                   options:(nullable KataGoConversionOptions *)options
-                     error:(NSError **)error {
-    return [self convertModelAtPath:inputPath
-                             toPath:outputPath
-                            options:options
-                           progress:nil
-                              error:error];
-}
-
-+ (BOOL)convertModelAtPath:(NSString *)inputPath
-                    toPath:(NSString *)outputPath
-                   options:(nullable KataGoConversionOptions *)options
-                  progress:(void (^)(float progress, NSString *stage))progressCallback
-                     error:(NSError **)error {
-    try {
-        katagocoreml::ConversionOptions opts;
-
-        if (options) {
-            opts.board_x_size = options.boardXSize;
-            opts.board_y_size = options.boardYSize;
-            opts.compute_precision = options.useFP16 ? "FLOAT16" : "FLOAT32";
-            opts.optimize_identity_mask = options.optimizeIdentityMask;
-            opts.specification_version = options.specificationVersion;
-        } else {
-            // Defaults
-            opts.board_x_size = 19;
-            opts.board_y_size = 19;
-            opts.compute_precision = "FLOAT16";
-            opts.optimize_identity_mask = true;
-            opts.specification_version = 8;
-        }
-
-        if (progressCallback) {
-            progressCallback(0.0f, @"Loading model...");
-        }
-
-        std::string input = [inputPath UTF8String];
-        std::string output = [outputPath UTF8String];
-
-        if (progressCallback) {
-            progressCallback(0.2f, @"Parsing model architecture...");
-        }
-
-        katagocoreml::KataGoConverter::convert(input, output, opts);
-
-        if (progressCallback) {
-            progressCallback(1.0f, @"Conversion complete");
-        }
-
-        return YES;
-
-    } catch (const std::exception& e) {
-        if (error) {
-            *error = [NSError errorWithDomain:@"KataGoErrorDomain"
-                                         code:2
-                                     userInfo:@{NSLocalizedDescriptionKey:
-                                         [NSString stringWithUTF8String:e.what()]}];
-        }
-        return NO;
-    }
-}
-
-@end
+**Swift Include Paths** (for module map):
+```
+$(PROJECT_DIR)/../ios-build/swift
 ```
 
-## Step 5: Swift Usage
+### 2.6 Add Module Map
 
-### 5.1 Model Conversion
+Add to "Other Swift Flags":
+```
+-Xcc -fmodule-map-file=$(PROJECT_DIR)/../ios-build/swift/module.modulemap
+```
+
+## Step 3: Add Swift/C++ Interop Files
+
+Copy these files to your project:
+
+```
+ios-build/swift/
+├── KataGoModelConverter.swift  # Pure Swift API
+├── katagocoreml-swift.h        # C++ header for Swift
+├── katagocoreml-swift.cpp      # C++ implementation
+└── module.modulemap            # Module map for C++ import
+```
+
+Add to your Xcode project:
+1. **KataGoModelConverter.swift** → Add to Swift sources
+2. **katagocoreml-swift.cpp** → Add to C++ sources (Compile Sources)
+3. **katagocoreml-swift.h** and **module.modulemap** → Add as headers (not compiled)
+
+## Step 4: Swift Usage
+
+### 4.1 Model Conversion
 
 ```swift
-import Foundation
-
-class KataGoEngine: ObservableObject {
-    @Published var isConverting = false
-    @Published var conversionProgress: Float = 0
-    @Published var conversionStage: String = ""
-
-    func convertModel(from inputURL: URL, to outputURL: URL) async throws {
-        await MainActor.run {
-            isConverting = true
-            conversionProgress = 0
-        }
-
-        let options = KataGoConversionOptions()
-        options.boardXSize = 19
-        options.boardYSize = 19
-        options.useFP16 = true
-        options.optimizeIdentityMask = true
-
-        var conversionError: NSError?
-
-        let success = KataGoModelConverter.convertModel(
-            atPath: inputURL.path,
-            toPath: outputURL.path,
-            options: options,
-            progress: { [weak self] progress, stage in
-                DispatchQueue.main.async {
-                    self?.conversionProgress = progress
-                    self?.conversionStage = stage ?? ""
-                }
-            },
-            error: &conversionError
-        )
-
-        await MainActor.run {
-            isConverting = false
-        }
-
-        if !success, let error = conversionError {
-            throw error
-        }
-    }
-}
-```
-
-### 5.2 Loading and Using the Model
-
-```swift
+import SwiftUI
 import CoreML
 
-extension KataGoEngine {
-    func loadConvertedModel(from mlpackageURL: URL) async throws -> MLModel {
-        let config = MLModelConfiguration()
-        config.computeUnits = .cpuAndNeuralEngine
+@Observable
+class KataGoEngine {
+    var isConverting = false
+    var conversionProgress: Float = 0
+    var conversionStage: String = ""
+    var model: MLModel?
 
-        // Compile the model
-        let compiledURL = try MLModel.compileModel(at: mlpackageURL)
+    private let converter = KataGoModelConverter()
 
-        // Load the compiled model
-        let model = try MLModel(contentsOf: compiledURL, configuration: config)
+    /// Get information about a model file
+    func getModelInfo(from url: URL) throws -> KataGoModelInfo {
+        return try converter.getModelInfo(from: url)
+    }
 
-        return model
+    /// Convert a KataGo model to CoreML format
+    func convertModel(from inputURL: URL, to outputURL: URL) async throws {
+        isConverting = true
+        defer { isConverting = false }
+
+        let options = KataGoConversionOptions(
+            boardXSize: 19,
+            boardYSize: 19,
+            useFP16: true,
+            optimizeIdentityMask: true
+        )
+
+        try await converter.convert(
+            from: inputURL,
+            to: outputURL,
+            options: options
+        ) { [weak self] progress, stage in
+            Task { @MainActor in
+                self?.conversionProgress = progress
+                self?.conversionStage = stage
+            }
+        }
+    }
+
+    /// Convert and immediately load the model
+    func convertAndLoad(from url: URL) async throws {
+        model = try await converter.convertAndLoad(from: url)
     }
 }
 ```
 
-## Step 6: Add KataGo C++ Sources (for MCTS)
+### 4.2 SwiftUI View
 
-If you also need MCTS search, add these C++ source files to your project:
+```swift
+import SwiftUI
+import UniformTypeIdentifiers
 
-### 6.1 Required Source Files
+struct ContentView: View {
+    @State private var engine = KataGoEngine()
+    @State private var showFilePicker = false
+    @State private var modelInfo: KataGoModelInfo?
+    @State private var errorMessage: String?
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Text("KataGo Model Converter")
+                .font(.title)
+
+            if let info = modelInfo {
+                VStack(alignment: .leading) {
+                    Text("Model: \(info.name)")
+                    Text("Version: \(info.version)")
+                    Text("Blocks: \(info.numBlocks)")
+                    Text("Channels: \(info.trunkNumChannels)")
+                }
+                .font(.caption)
+                .padding()
+                .background(Color.gray.opacity(0.1))
+                .cornerRadius(8)
+            }
+
+            if engine.isConverting {
+                VStack {
+                    ProgressView(value: engine.conversionProgress)
+                    Text(engine.conversionStage)
+                        .font(.caption)
+                }
+                .padding()
+            }
+
+            Button("Select Model File") {
+                showFilePicker = true
+            }
+            .disabled(engine.isConverting)
+
+            if let error = errorMessage {
+                Text(error)
+                    .foregroundColor(.red)
+                    .font(.caption)
+            }
+        }
+        .padding()
+        .fileImporter(
+            isPresented: $showFilePicker,
+            allowedContentTypes: [.data],
+            allowsMultipleSelection: false
+        ) { result in
+            handleFileSelection(result)
+        }
+    }
+
+    private func handleFileSelection(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+
+            Task {
+                do {
+                    // Get model info
+                    modelInfo = try engine.getModelInfo(from: url)
+
+                    // Convert and load
+                    try await engine.convertAndLoad(from: url)
+
+                    errorMessage = nil
+                } catch {
+                    errorMessage = error.localizedDescription
+                }
+            }
+
+        case .failure(let error):
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+```
+
+## Step 5: Add KataGo MCTS (Optional)
+
+If you need full MCTS search, add the KataGo C++ sources and Swift inference files.
+
+### 5.1 Required C++ Source Files
 
 Copy these directories to your Xcode project:
 - `cpp/core/` (utilities)
@@ -387,11 +298,13 @@ Copy these directories to your Xcode project:
 - `cpp/search/` (MCTS)
 - `cpp/neuralnet/` (neural net interface)
 
-### 6.2 Swift Files for Inference
+### 5.2 Swift Inference Files
 
-Copy these Swift files:
+Copy from the `coreml-backend` branch:
 - `cpp/neuralnet/coremlbackend.swift`
 - `cpp/neuralnet/mpsgraphlayers.swift`
+
+These already use Swift/C++ interop and integrate seamlessly.
 
 ## Project Structure
 
@@ -399,55 +312,75 @@ Copy these Swift files:
 KataGoApp/
 ├── KataGoApp.xcodeproj
 ├── KataGoApp/
-│   ├── KataGoApp.swift          # @main App
-│   ├── ContentView.swift        # Main UI
-│   ├── KataGoEngine.swift       # Engine wrapper
-│   ├── GoBoardView.swift        # Board UI
+│   ├── KataGoApp.swift              # @main App
+│   ├── ContentView.swift            # Main UI
+│   ├── KataGoEngine.swift           # Engine wrapper
+│   ├── GoBoardView.swift            # Board UI (optional)
 │   │
-│   ├── Bridge/
-│   │   ├── KataGo-Bridging-Header.h
-│   │   ├── KataGoBridge.h
-│   │   └── KataGoBridge.mm
+│   ├── Interop/                     # C++/Swift interop
+│   │   ├── KataGoModelConverter.swift
+│   │   ├── katagocoreml-swift.h
+│   │   ├── katagocoreml-swift.cpp
+│   │   └── module.modulemap
 │   │
-│   ├── CoreML/                  # Swift inference (optional)
+│   ├── CoreML/                      # Swift inference
 │   │   ├── coremlbackend.swift
 │   │   └── mpsgraphlayers.swift
 │   │
 │   └── Resources/
-│       └── gtp_ios.cfg          # Config file
+│       └── gtp_ios.cfg              # Config file
 │
-└── Libraries/                   # Symlink to ios-build/install/ios/
+└── Libraries/                       # Symlink to ios-build/install/ios/
     ├── include/
     └── lib/
 ```
 
+## Build Settings Summary
+
+| Setting | Value |
+|---------|-------|
+| C++ Language Dialect | C++17 |
+| C++ and Objective-C Interoperability | C++ / Objective-C++ |
+| Other Swift Flags | `-cxx-interoperability-mode=default` |
+| Header Search Paths | `$(PROJECT_DIR)/../ios-build/install/ios/include` |
+| Library Search Paths | `$(PROJECT_DIR)/../ios-build/install/ios/lib` |
+| Other Linker Flags | `-lc++` |
+
 ## Troubleshooting
 
-### Undefined symbols for C++ standard library
+### "No such module" error
 
-Add to Other Linker Flags: `-lc++`
+Ensure the module.modulemap is in the Swift Include Paths and the `-Xcc -fmodule-map-file=` flag is set.
 
-### Protobuf symbol conflicts
+### Undefined C++ symbols
 
-Ensure all protobuf/abseil libraries are from the same build.
+Add `-lc++` to Other Linker Flags.
 
-### "No such module" for Swift files
+### Swift can't find C++ types
 
-Ensure Swift files are added to the target's Compile Sources.
+Verify:
+1. C++ Interoperability is enabled
+2. Module map path is correct
+3. Headers are in Header Search Paths
 
-### CoreML model compilation fails
+### Linker errors for protobuf/abseil
 
-Check iOS deployment target matches spec version (iOS 17+ for spec v8).
+Ensure all `.a` files from `install/ios/lib/` are added to Link Binary With Libraries.
+
+### CoreML model compilation fails on device
+
+Check iOS deployment target matches the specification version (iOS 17+ for spec v8).
 
 ## Performance Tips
 
-1. **Use FP16**: Reduces model size by 50% with minimal accuracy loss
-2. **Enable mask optimization**: ~6.5% speedup for fixed board sizes
-3. **Hybrid execution**: Let CoreML dispatch to CPU+ANE+GPU automatically
-4. **Background conversion**: Convert models on background queue
+1. **Use FP16**: Reduces model size by 50%, minimal accuracy loss
+2. **Enable mask optimization**: ~6.5% speedup for fixed 19x19 board
+3. **Background conversion**: Always convert on background queue
+4. **Cache converted models**: Store .mlpackage in app's Documents
 
 ## References
 
+- [Swift C++ Interoperability](https://www.swift.org/documentation/cxx-interop/)
 - [KataGo GitHub](https://github.com/lightvector/KataGo)
 - [katagocoreml-cpp](https://github.com/ChinChangYang/katagocoreml-cpp)
 - [CoreML Documentation](https://developer.apple.com/documentation/coreml)
