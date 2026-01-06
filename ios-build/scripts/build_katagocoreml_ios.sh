@@ -14,7 +14,7 @@ HOST_INSTALL_DIR="${BUILD_ROOT}/install/host"
 
 # katagocoreml-cpp repository
 KATAGOCOREML_REPO="https://github.com/ChinChangYang/katagocoreml-cpp.git"
-KATAGOCOREML_BRANCH="main"
+KATAGOCOREML_BRANCH="master"
 
 # Number of parallel jobs
 JOBS=$(sysctl -n hw.ncpu)
