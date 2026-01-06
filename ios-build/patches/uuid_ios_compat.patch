@@ -1,0 +1,50 @@
+--- a/src/ModelPackage.cpp
++++ b/src/ModelPackage.cpp
+@@ -8,7 +8,19 @@
+ #include <sstream>
+ #include <istream>
+ #include <string>
++
++#if defined(__APPLE__)
++#include <TargetConditionals.h>
++#if TARGET_OS_IOS || TARGET_OS_SIMULATOR
++// iOS: Use CoreFoundation for UUID generation
++#include <CoreFoundation/CoreFoundation.h>
++#else
++// macOS: Use standard uuid library
+ #include <uuid/uuid.h>
++#endif
++#else
++#include <uuid/uuid.h>
++#endif
+
+ #if __has_include(<filesystem>)
+ #include <filesystem>
+@@ -20,6 +32,28 @@
+ #error "No filesystem support"
+ #endif
+
++// Cross-platform UUID generation
++namespace {
++
++std::string generate_uuid_string() {
++#if defined(__APPLE__) && (TARGET_OS_IOS || TARGET_OS_SIMULATOR)
++    // iOS implementation using CoreFoundation
++    CFUUIDRef uuid = CFUUIDCreate(NULL);
++    CFStringRef uuidStr = CFUUIDCreateString(NULL, uuid);
++    char buffer[37];
++    CFStringGetCString(uuidStr, buffer, sizeof(buffer), kCFStringEncodingASCII);
++    CFRelease(uuidStr);
++    CFRelease(uuid);
++    return std::string(buffer);
++#else
++    // macOS/Linux implementation using libuuid
++    uuid_t uuid;
++    uuid_generate(uuid);
++    char uuid_str[37];
++    uuid_unparse_lower(uuid, uuid_str);
++    return std::string(uuid_str);
++#endif
++}
++
++} // anonymous namespace
