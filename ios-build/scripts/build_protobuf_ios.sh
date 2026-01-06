@@ -94,6 +94,11 @@ if [ ! -d "${INSTALL_DIR}/lib/cmake/absl" ]; then
     exit 1
 fi
 
+# List what's available in Abseil
+echo "Abseil iOS installation:"
+ls -la "${INSTALL_DIR}/lib/cmake/absl/" | head -5
+echo ""
+
 mkdir -p build-ios
 cd build-ios
 
@@ -105,18 +110,22 @@ cmake .. \
     -DCMAKE_PREFIX_PATH="${INSTALL_DIR}" \
     -Dprotobuf_BUILD_TESTS=OFF \
     -Dprotobuf_BUILD_EXAMPLES=OFF \
-    -Dprotobuf_BUILD_PROTOBUF_BINARIES=OFF \
     -Dprotobuf_BUILD_PROTOC_BINARIES=OFF \
     -Dprotobuf_BUILD_LIBPROTOC=OFF \
     -Dprotobuf_BUILD_SHARED_LIBS=OFF \
     -Dprotobuf_ABSL_PROVIDER=package \
     -Dabsl_DIR="${INSTALL_DIR}/lib/cmake/absl" \
     -Dutf8_range_DIR="${INSTALL_DIR}/lib/cmake/utf8_range" \
-    -DABSL_PROPAGATE_CXX_STD=ON \
     -DCMAKE_CXX_STANDARD=17 \
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON
 
-cmake --build . -j${JOBS}
+# Show what targets are available
+echo ""
+echo "Available CMake targets:"
+cmake --build . --target help 2>/dev/null | head -20 || true
+echo ""
+
+cmake --build . -j${JOBS} --verbose
 cmake --install .
 
 echo ""
