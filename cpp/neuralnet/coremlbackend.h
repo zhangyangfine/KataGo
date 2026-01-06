@@ -14,6 +14,21 @@
 using namespace std;
 using namespace KataGoCoreML;
 
+/// Cumulative statistics for CoreML and MPSGraph inference paths
+struct HybridStats {
+  uint64_t coreMLSamples;
+  uint64_t coreMLBatches;
+  uint64_t mpsGraphSamples;
+  uint64_t mpsGraphBatches;
+  float currentRatio;  // Current CoreML batch ratio (0.0 to 1.0)
+
+  /// Print statistics to stdout
+  void print() const;
+};
+
+/// Get hybrid backend statistics from a ComputeHandle
+HybridStats getHybridStats(const ComputeHandle* handle);
+
 namespace CoreMLProcess {
 
 void copyRowData(float* dest, const float* src, size_t numElements);

@@ -42,6 +42,8 @@ set(USE_BIGGER_BOARDS_EXPENSIVE 0 CACHE BOOL "Allow boards up to size 50. Compil
 set(USE_CACHE_TENSORRT_PLAN 0 CACHE BOOL "Use TENSORRT plan cache. May use a lot of disk space. Only applies when USE_BACKEND is TENSORRT.")
 mark_as_advanced(USE_CACHE_TENSORRT_PLAN)
 
+set(VERBOSE_COREML 0 CACHE BOOL "Enable verbose CoreML/MPSGraph logging for performance analysis. Only applies when USE_BACKEND is COREML.")
+
 #--------------------------- NEURAL NET BACKEND ------------------------------------------------------------------------
 
 message(STATUS "Building 'katago' executable for GTP engine and other tools.")
@@ -154,6 +156,11 @@ elseif(USE_BACKEND STREQUAL "COREML")
   set_target_properties(KataGoCoreML PROPERTIES Swift_MODULE_NAME "KataGoCoreML")
   target_compile_options(KataGoCoreML PUBLIC
     "$<$<COMPILE_LANGUAGE:Swift>:-cxx-interoperability-mode=default>")
+  if(VERBOSE_COREML)
+    message(STATUS "-DVERBOSE_COREML=1 is set, enabling verbose CoreML/MPSGraph logging")
+    # Use Swift-specific compile option for conditional compilation
+    target_compile_options(KataGoCoreML PRIVATE "$<$<COMPILE_LANGUAGE:Swift>:-DVERBOSE_COREML>")
+  endif()
 elseif(USE_BACKEND STREQUAL "OPENCL")
   message(STATUS "-DUSE_BACKEND=OPENCL, using OpenCL backend.")
   set(NEURALNET_BACKEND_SOURCES

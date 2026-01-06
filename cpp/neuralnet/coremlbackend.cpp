@@ -9,6 +9,7 @@
 #include <katagocoreml/KataGoConverter.hpp>
 #include <mutex>
 #include <fstream>
+#include <iomanip>
 #include <sys/stat.h>
 #include <pwd.h>
 #include <unistd.h>
@@ -1054,6 +1055,50 @@ bool NeuralNet::testEvaluateGlobalPoolingResidualBlock(
   (void)maskBuffer;
   (void)outputBuffer;
   return false;
+}
+
+//------------------------------------------------------------------------------
+// Hybrid backend statistics
+//------------------------------------------------------------------------------
+
+void HybridStats::print() const {
+  uint64_t totalSamples = coreMLSamples + mpsGraphSamples;
+  uint64_t totalBatches = coreMLBatches + mpsGraphBatches;
+
+  cout << endl;
+  cout << "CoreML Hybrid Backend Statistics:" << endl;
+  cout << "  CoreML (CPU+ANE):  " << coreMLSamples << " samples in " << coreMLBatches << " batches";
+  if(coreMLBatches > 0) {
+    cout << " (avg " << fixed << setprecision(1) << (double)coreMLSamples / coreMLBatches << " samples/batch)";
+  }
+  cout << endl;
+  cout << "  MPSGraph (GPU):    " << mpsGraphSamples << " samples in " << mpsGraphBatches << " batches";
+  if(mpsGraphBatches > 0) {
+    cout << " (avg " << fixed << setprecision(1) << (double)mpsGraphSamples / mpsGraphBatches << " samples/batch)";
+  }
+  cout << endl;
+  cout << "  Total:             " << totalSamples << " samples in " << totalBatches << " batches" << endl;
+  if(totalSamples > 0) {
+    double coreMLPct = 100.0 * coreMLSamples / totalSamples;
+    double mpsGraphPct = 100.0 * mpsGraphSamples / totalSamples;
+    cout << "  Split ratio:       CoreML " << fixed << setprecision(1) << coreMLPct << "% / MPSGraph " << mpsGraphPct << "%" << endl;
+    cout << "  Current ratio:     " << fixed << setprecision(3) << currentRatio << " (CoreML share)" << endl;
+  }
+  cout << endl;
+}
+
+HybridStats getHybridStats(const ComputeHandle* handle) {
+  HybridStats stats = {0, 0, 0, 0, 0.5f};
+
+  if(handle && handle->hybridHandle) {
+    stats.coreMLSamples = handle->hybridHandle.get().getCoreMLSamples();
+    stats.coreMLBatches = handle->hybridHandle.get().getCoreMLBatches();
+    stats.mpsGraphSamples = handle->hybridHandle.get().getMPSGraphSamples();
+    stats.mpsGraphBatches = handle->hybridHandle.get().getMPSGraphBatches();
+    stats.currentRatio = handle->hybridHandle.get().getCurrentRatio();
+  }
+
+  return stats;
 }
 
 #endif // USE_COREML_BACKEND

@@ -394,12 +394,20 @@ public class ThroughputTracker {
     private let alpha: Double = 0.3  // EMA smoothing factor (higher = faster adaptation)
     private let lock = NSLock()
 
+    // Cumulative statistics
+    private var coreMLTotalSamples: UInt64 = 0
+    private var coreMLTotalBatches: UInt64 = 0
+    private var mpsGraphTotalSamples: UInt64 = 0
+    private var mpsGraphTotalBatches: UInt64 = 0
+
     /// Update CoreML throughput measurement
     public func updateCoreML(samples: Int, duration: TimeInterval) {
         guard duration > 0, samples > 0 else { return }
         let newRate = Double(samples) / duration
         lock.lock()
         coreMLSamplesPerSec = alpha * newRate + (1 - alpha) * coreMLSamplesPerSec
+        coreMLTotalSamples += UInt64(samples)
+        coreMLTotalBatches += 1
         lock.unlock()
     }
 
@@ -409,6 +417,8 @@ public class ThroughputTracker {
         let newRate = Double(samples) / duration
         lock.lock()
         mpsGraphSamplesPerSec = alpha * newRate + (1 - alpha) * mpsGraphSamplesPerSec
+        mpsGraphTotalSamples += UInt64(samples)
+        mpsGraphTotalBatches += 1
         lock.unlock()
     }
 
@@ -424,7 +434,17 @@ public class ThroughputTracker {
     /// Get current throughput stats for logging
     public func getStats() -> (coreML: Double, mpsGraph: Double, ratio: Float) {
         lock.lock()
-        let stats = (coreMLSamplesPerSec, mpsGraphSamplesPerSec, getOptimalCoreMLRatio())
+        let total = coreMLSamplesPerSec + mpsGraphSamplesPerSec
+        let ratio = total > 0 ? Float(coreMLSamplesPerSec / total) : 0.5
+        let stats = (coreMLSamplesPerSec, mpsGraphSamplesPerSec, ratio)
+        lock.unlock()
+        return stats
+    }
+
+    /// Get cumulative statistics
+    public func getCumulativeStats() -> (coreMLSamples: UInt64, coreMLBatches: UInt64, mpsGraphSamples: UInt64, mpsGraphBatches: UInt64) {
+        lock.lock()
+        let stats = (coreMLTotalSamples, coreMLTotalBatches, mpsGraphTotalSamples, mpsGraphTotalBatches)
         lock.unlock()
         return stats
     }
@@ -741,6 +761,11 @@ public class HybridComputeHandle {
         let coreMLBatchSize = max(1, min(batchSize - 1, Int(Float(batchSize) * ratio)))
         let mpsGraphBatchSize = batchSize - coreMLBatchSize
 
+        #if VERBOSE_COREML
+        let stats = throughputTracker.getStats()
+        printError("[Hybrid] batch=\(batchSize) coreml=\(coreMLBatchSize) mpsgraph=\(mpsGraphBatchSize) ratio=\(String(format: "%.3f", ratio)) coreml_rate=\(String(format: "%.1f", stats.coreML)) mpsgraph_rate=\(String(format: "%.1f", stats.mpsGraph))")
+        #endif
+
         // Calculate buffer offsets
         let spatialSize = Int(nnXLen) * Int(nnYLen) * coremlHandle.numInputChannels
         let globalSize = coremlHandle.numInputGlobalChannels
@@ -773,6 +798,9 @@ public class HybridComputeHandle {
 
                 let duration = CFAbsoluteTimeGetCurrent() - start
                 throughputTracker.updateCoreML(samples: coreMLBatchSize, duration: duration)
+                #if VERBOSE_COREML
+                printError("[CoreML] samples=\(coreMLBatchSize) duration=\(String(format: "%.3f", duration * 1000))ms rate=\(String(format: "%.1f", Double(coreMLBatchSize) / duration))/s")
+                #endif
                 group.leave()
             }
         }
@@ -808,12 +836,40 @@ public class HybridComputeHandle {
 
                 let duration = CFAbsoluteTimeGetCurrent() - start
                 throughputTracker.updateMPSGraph(samples: mpsGraphBatchSize, duration: duration)
+                #if VERBOSE_COREML
+                printError("[MPSGraph] samples=\(mpsGraphBatchSize) duration=\(String(format: "%.3f", duration * 1000))ms rate=\(String(format: "%.1f", Double(mpsGraphBatchSize) / duration))/s")
+                #endif
                 group.leave()
             }
         }
 
         // Wait for both paths to complete
         group.wait()
+    }
+
+    /// Get cumulative CoreML samples processed
+    public func getCoreMLSamples() -> UInt64 {
+        return throughputTracker.getCumulativeStats().coreMLSamples
+    }
+
+    /// Get cumulative CoreML batches processed
+    public func getCoreMLBatches() -> UInt64 {
+        return throughputTracker.getCumulativeStats().coreMLBatches
+    }
+
+    /// Get cumulative MPSGraph samples processed
+    public func getMPSGraphSamples() -> UInt64 {
+        return throughputTracker.getCumulativeStats().mpsGraphSamples
+    }
+
+    /// Get cumulative MPSGraph batches processed
+    public func getMPSGraphBatches() -> UInt64 {
+        return throughputTracker.getCumulativeStats().mpsGraphBatches
+    }
+
+    /// Get current throughput ratio
+    public func getCurrentRatio() -> Float {
+        return throughputTracker.getOptimalCoreMLRatio()
     }
 }
 
