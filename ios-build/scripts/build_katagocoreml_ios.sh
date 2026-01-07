@@ -137,10 +137,17 @@ echo ""
 echo "Building katagocoreml-cpp for iOS arm64..."
 echo ""
 
+# Debug: show what's installed
+echo "Protobuf installation:"
+ls -la "${INSTALL_DIR}/include/google/protobuf/" 2>/dev/null | head -5 || echo "No protobuf headers"
+ls -la "${INSTALL_DIR}/lib/libprotobuf"* 2>/dev/null || echo "No protobuf libs"
+echo ""
+
 mkdir -p build-ios
 cd build-ios
 
 # Configure with CMake
+# Use explicit paths for FindProtobuf module
 cmake .. \
     -DCMAKE_TOOLCHAIN_FILE="${TOOLCHAIN_FILE}" \
     -DCMAKE_BUILD_TYPE=Release \
@@ -152,6 +159,9 @@ cmake .. \
     -DBUILD_SHARED_LIBS=OFF \
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
     -DProtobuf_DIR="${INSTALL_DIR}/lib/cmake/protobuf" \
+    -DProtobuf_INCLUDE_DIR="${INSTALL_DIR}/include" \
+    -DProtobuf_LIBRARY="${INSTALL_DIR}/lib/libprotobuf.a" \
+    -DProtobuf_PROTOC_EXECUTABLE="${HOST_INSTALL_DIR}/bin/protoc" \
     -Dabsl_DIR="${INSTALL_DIR}/lib/cmake/absl" \
     -DZLIB_ROOT="${INSTALL_DIR}"
 
