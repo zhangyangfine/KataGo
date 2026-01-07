@@ -466,6 +466,7 @@ public class MPSGraphModelHandle {
     let numValueChannels: Int
     let numScoreValueChannels: Int
     let numOwnershipChannels: Int
+    let useFP16: Bool
 
     // Layers
     let input: InputLayer
@@ -481,7 +482,8 @@ public class MPSGraphModelHandle {
         modelDesc: SWModelDesc,
         nnXLen: Int32,
         nnYLen: Int32,
-        optimizeIdentityMask: Bool = false
+        optimizeIdentityMask: Bool = false,
+        useFP16: Bool = false
     ) {
         guard let device = MTLCreateSystemDefaultDevice() else {
             printError("MPSGraph backend: Failed to create Metal device")
@@ -504,28 +506,34 @@ public class MPSGraphModelHandle {
         self.numValueChannels = modelDesc.numValueChannels.intValue
         self.numScoreValueChannels = modelDesc.numScoreValueChannels.intValue
         self.numOwnershipChannels = modelDesc.numOwnershipChannels.intValue
+        self.useFP16 = useFP16
 
         let nnXLenNS = nnXLen as NSNumber
         let nnYLenNS = nnYLen as NSNumber
+        let dataType: MPSDataType = useFP16 ? .float16 : .float32
 
         input = InputLayer(
             graph: graph,
             nnXLen: nnXLenNS,
             nnYLen: nnYLenNS,
-            numChannels: modelDesc.numInputChannels)
+            numChannels: modelDesc.numInputChannels,
+            dataType: dataType)
 
         inputGlobal = InputGlobalLayer(
             graph: graph,
-            numGlobalFeatures: modelDesc.numInputGlobalChannels)
+            numGlobalFeatures: modelDesc.numInputGlobalChannels,
+            dataType: dataType)
 
         inputMeta = InputMetaLayer(
             graph: graph,
-            numMetaFeatures: modelDesc.numInputMetaChannels)
+            numMetaFeatures: modelDesc.numInputMetaChannels,
+            dataType: dataType)
 
         mask = MaskLayer(
             graph: graph,
             nnXLen: nnXLenNS,
-            nnYLen: nnYLenNS)
+            nnYLen: nnYLenNS,
+            dataType: dataType)
 
         // Use constant tensors when mask is all 1s (requireExactNNLen=true)
         let maskSum: MaskSumLayer
@@ -536,15 +544,18 @@ public class MPSGraphModelHandle {
             maskSum = MaskSumLayer(
                 graph: graph,
                 nnXLen: nnXLenNS,
-                nnYLen: nnYLenNS)
+                nnYLen: nnYLenNS,
+                dataType: dataType)
             maskSumSqrtS14M01 = MaskSumSqrtS14M01Layer(
                 graph: graph,
                 nnXLen: nnXLenNS,
-                nnYLen: nnYLenNS)
+                nnYLen: nnYLenNS,
+                dataType: dataType)
             maskSumSqrtS14M01SquareS01 = MaskSumSqrtS14M01SquareS01Layer(
                 graph: graph,
                 nnXLen: nnXLenNS,
-                nnYLen: nnYLenNS)
+                nnYLen: nnYLenNS,
+                dataType: dataType)
         } else {
             maskSum = MaskSumLayer(
                 graph: graph,
@@ -568,7 +579,8 @@ public class MPSGraphModelHandle {
             maskSumSqrtS14M01Tensor: maskSumSqrtS14M01.tensor,
             nnXLen: nnXLenNS,
             nnYLen: nnYLenNS,
-            optimizeIdentityMask: optimizeIdentityMask)
+            optimizeIdentityMask: optimizeIdentityMask,
+            useFP16: useFP16)
 
         policyHead = PolicyHead(
             graph: graph,
@@ -579,7 +591,8 @@ public class MPSGraphModelHandle {
             maskSumSqrtS14M01Tensor: maskSumSqrtS14M01.tensor,
             nnXLen: nnXLenNS,
             nnYLen: nnYLenNS,
-            optimizeIdentityMask: optimizeIdentityMask)
+            optimizeIdentityMask: optimizeIdentityMask,
+            useFP16: useFP16)
 
         valueHead = ValueHead(
             graph: graph,
@@ -591,7 +604,8 @@ public class MPSGraphModelHandle {
             maskSumSqrtS14M01SquareS01Tensor: maskSumSqrtS14M01SquareS01.tensor,
             nnXLen: nnXLenNS,
             nnYLen: nnYLenNS,
-            optimizeIdentityMask: optimizeIdentityMask)
+            optimizeIdentityMask: optimizeIdentityMask,
+            useFP16: useFP16)
 
         targetTensors = [
             policyHead.policyTensor,
@@ -601,7 +615,7 @@ public class MPSGraphModelHandle {
             valueHead.ownershipTensor,
         ]
 
-        printError("MPSGraph backend: Initialized on \(device.name)\(optimizeIdentityMask ? " (mask optimized)" : "")")
+        printError("MPSGraph backend: Initialized on \(device.name)\(optimizeIdentityMask ? " (mask optimized)" : "")\(useFP16 ? " (FP16)" : "")")
     }
 
     /// Run inference on a batch using MPSGraph (GPU)
@@ -635,7 +649,17 @@ public class MPSGraphModelHandle {
             device: device,
             descriptor: inputDescriptor)
 
-        inputArray.writeBytes(inputPointer)
+        // Convert Float32 input to Float16 if using FP16 mode
+        if useFP16 {
+            let inputCount = inputShape.countElements()
+            var inputFP16 = [Float16](repeating: 0, count: inputCount)
+            for i in 0..<inputCount {
+                inputFP16[i] = Float16(inputPointer[i])
+            }
+            inputFP16.withUnsafeBytes { inputArray.writeBytes(UnsafeMutableRawPointer(mutating: $0.baseAddress!)) }
+        } else {
+            inputArray.writeBytes(inputPointer)
+        }
 
         let numInputGlobalChannels = inputGlobal.shape[channelAxis]
 
@@ -653,7 +677,17 @@ public class MPSGraphModelHandle {
             device: device,
             descriptor: inputGlobalDescriptor)
 
-        inputGlobalArray.writeBytes(inputGlobalPointer)
+        // Convert Float32 inputGlobal to Float16 if using FP16 mode
+        if useFP16 {
+            let inputGlobalCount = inputGlobalShape.countElements()
+            var inputGlobalFP16 = [Float16](repeating: 0, count: inputGlobalCount)
+            for i in 0..<inputGlobalCount {
+                inputGlobalFP16[i] = Float16(inputGlobalPointer[i])
+            }
+            inputGlobalFP16.withUnsafeBytes { inputGlobalArray.writeBytes(UnsafeMutableRawPointer(mutating: $0.baseAddress!)) }
+        } else {
+            inputGlobalArray.writeBytes(inputGlobalPointer)
+        }
 
         let numInputMetaChannels = inputMeta.shape[channelAxis]
 
@@ -671,7 +705,17 @@ public class MPSGraphModelHandle {
             device: device,
             descriptor: inputMetaDescriptor)
 
-        inputMetaArray.writeBytes(inputMetaPointer)
+        // Convert Float32 inputMeta to Float16 if using FP16 mode
+        if useFP16 {
+            let inputMetaCount = inputMetaShape.countElements()
+            var inputMetaFP16 = [Float16](repeating: 0, count: inputMetaCount)
+            for i in 0..<inputMetaCount {
+                inputMetaFP16[i] = Float16(inputMetaPointer[i])
+            }
+            inputMetaFP16.withUnsafeBytes { inputMetaArray.writeBytes(UnsafeMutableRawPointer(mutating: $0.baseAddress!)) }
+        } else {
+            inputMetaArray.writeBytes(inputMetaPointer)
+        }
 
         let maskShape = InputShape.create(
             batchSize: batchSize as NSNumber,
@@ -687,15 +731,30 @@ public class MPSGraphModelHandle {
             device: device,
             descriptor: maskDescriptor)
 
-        // Extract mask from first channel of spatial input
-        var maskStrideArray = [
-            MemoryLayout<Float32>.size,
-            Int(nnXLen) * MemoryLayout<Float32>.size,
-            Int(nnYLen) * Int(nnXLen) * MemoryLayout<Float32>.size,
-            numInputChannels.intValue * Int(nnYLen) * Int(nnXLen) * MemoryLayout<Float32>.size,
-        ]
-
-        maskArray.writeBytes(inputPointer, strideBytes: &maskStrideArray)
+        // Extract mask from first channel of spatial input and convert if FP16
+        let maskCount = maskShape.countElements()
+        if useFP16 {
+            var maskFP16 = [Float16](repeating: 0, count: maskCount)
+            let spatialStride = numInputChannels.intValue
+            for b in 0..<batchSize {
+                for y in 0..<Int(nnYLen) {
+                    for x in 0..<Int(nnXLen) {
+                        let srcIdx = b * spatialStride * Int(nnYLen) * Int(nnXLen) + y * Int(nnXLen) + x
+                        let dstIdx = b * Int(nnYLen) * Int(nnXLen) + y * Int(nnXLen) + x
+                        maskFP16[dstIdx] = Float16(inputPointer[srcIdx])
+                    }
+                }
+            }
+            maskFP16.withUnsafeBytes { maskArray.writeBytes(UnsafeMutableRawPointer(mutating: $0.baseAddress!)) }
+        } else {
+            var maskStrideArray = [
+                MemoryLayout<Float32>.size,
+                Int(nnXLen) * MemoryLayout<Float32>.size,
+                Int(nnYLen) * Int(nnXLen) * MemoryLayout<Float32>.size,
+                numInputChannels.intValue * Int(nnYLen) * Int(nnXLen) * MemoryLayout<Float32>.size,
+            ]
+            maskArray.writeBytes(inputPointer, strideBytes: &maskStrideArray)
+        }
 
         let feeds = [
             input.tensor: MPSGraphTensorData(inputArray),
@@ -710,11 +769,54 @@ public class MPSGraphModelHandle {
             targetTensors: targetTensors,
             targetOperations: nil)
 
-        fetch[policyHead.policyTensor]?.mpsndarray().readBytes(policy)
-        fetch[policyHead.policyPassTensor]?.mpsndarray().readBytes(policyPass)
-        fetch[valueHead.valueTensor]?.mpsndarray().readBytes(value)
-        fetch[valueHead.scoreValueTensor]?.mpsndarray().readBytes(scoreValue)
-        fetch[valueHead.ownershipTensor]?.mpsndarray().readBytes(ownership)
+        // Read outputs and convert from Float16 to Float32 if using FP16 mode
+        if useFP16 {
+            // Policy output
+            let policyCount = batchSize * numPolicyChannels * Int(nnXLen) * Int(nnYLen)
+            var policyFP16 = [Float16](repeating: 0, count: policyCount)
+            policyFP16.withUnsafeMutableBytes {
+                fetch[policyHead.policyTensor]?.mpsndarray().readBytes($0.baseAddress!)
+            }
+            for i in 0..<policyCount { policy[i] = Float32(policyFP16[i]) }
+
+            // Policy pass output
+            let policyPassCount = batchSize * numPolicyChannels
+            var policyPassFP16 = [Float16](repeating: 0, count: policyPassCount)
+            policyPassFP16.withUnsafeMutableBytes {
+                fetch[policyHead.policyPassTensor]?.mpsndarray().readBytes($0.baseAddress!)
+            }
+            for i in 0..<policyPassCount { policyPass[i] = Float32(policyPassFP16[i]) }
+
+            // Value output
+            let valueCount = batchSize * numValueChannels
+            var valueFP16 = [Float16](repeating: 0, count: valueCount)
+            valueFP16.withUnsafeMutableBytes {
+                fetch[valueHead.valueTensor]?.mpsndarray().readBytes($0.baseAddress!)
+            }
+            for i in 0..<valueCount { value[i] = Float32(valueFP16[i]) }
+
+            // Score value output
+            let scoreValueCount = batchSize * numScoreValueChannels
+            var scoreValueFP16 = [Float16](repeating: 0, count: scoreValueCount)
+            scoreValueFP16.withUnsafeMutableBytes {
+                fetch[valueHead.scoreValueTensor]?.mpsndarray().readBytes($0.baseAddress!)
+            }
+            for i in 0..<scoreValueCount { scoreValue[i] = Float32(scoreValueFP16[i]) }
+
+            // Ownership output
+            let ownershipCount = batchSize * numOwnershipChannels * Int(nnXLen) * Int(nnYLen)
+            var ownershipFP16 = [Float16](repeating: 0, count: ownershipCount)
+            ownershipFP16.withUnsafeMutableBytes {
+                fetch[valueHead.ownershipTensor]?.mpsndarray().readBytes($0.baseAddress!)
+            }
+            for i in 0..<ownershipCount { ownership[i] = Float32(ownershipFP16[i]) }
+        } else {
+            fetch[policyHead.policyTensor]?.mpsndarray().readBytes(policy)
+            fetch[policyHead.policyPassTensor]?.mpsndarray().readBytes(policyPass)
+            fetch[valueHead.valueTensor]?.mpsndarray().readBytes(value)
+            fetch[valueHead.scoreValueTensor]?.mpsndarray().readBytes(scoreValue)
+            fetch[valueHead.ownershipTensor]?.mpsndarray().readBytes(ownership)
+        }
     }
 }
 
@@ -886,7 +988,8 @@ public func createHybridComputeHandle(
     numValueChannels: Int32,
     numScoreValueChannels: Int32,
     numOwnershipChannels: Int32,
-    context: CoreMLComputeContext
+    context: CoreMLComputeContext,
+    useFP16: Bool
 ) -> HybridComputeHandle? {
 
     // Create CoreML handle (CPU + ANE)
@@ -912,13 +1015,15 @@ public func createHybridComputeHandle(
         modelDesc: modelDesc,
         nnXLen: context.nnXLen,
         nnYLen: context.nnYLen,
-        optimizeIdentityMask: requireExactNNLen
+        optimizeIdentityMask: requireExactNNLen,
+        useFP16: useFP16
     ) else {
         printError("Hybrid backend \(serverThreadIdx): Failed to create MPSGraph handle")
         return nil
     }
 
-    printError("Hybrid backend \(serverThreadIdx): Initialized CoreML (CPU+ANE) + MPSGraph (GPU)")
+    let precisionStr = useFP16 ? "FP16" : "FP32"
+    printError("Hybrid backend \(serverThreadIdx): Initialized CoreML (CPU+ANE) + MPSGraph (GPU, \(precisionStr))")
 
     return HybridComputeHandle(
         coremlHandle: coremlHandle,

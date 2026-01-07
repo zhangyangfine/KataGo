@@ -513,7 +513,8 @@ static swift::Optional<KataGoCoreML::HybridComputeHandle> convertAndCreateHybrid
     loadedModel->modelDesc.numValueChannels,
     loadedModel->modelDesc.numScoreValueChannels,
     loadedModel->modelDesc.numOwnershipChannels,
-    coremlContext
+    coremlContext,
+    useFP16
   );
 }
 
