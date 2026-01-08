@@ -446,12 +446,11 @@ elseif(USE_BACKEND STREQUAL "COREML")
   # Link katagocoreml with full path and add all required library directories
   find_library(KATAGOCOREML_LIB katagocoreml HINTS /usr/local/lib REQUIRED)
   target_link_directories(katago PRIVATE ${KATAGOCOREML_LIBRARY_DIRS})
-  # Filter out -lc++ from KATAGOCOREML_LDFLAGS to avoid duplicate library warning
-  # (Swift C++ interoperability already links libc++)
-  set(KATAGOCOREML_LDFLAGS_FILTERED ${KATAGOCOREML_LDFLAGS})
-  list(FILTER KATAGOCOREML_LDFLAGS_FILTERED EXCLUDE REGEX "^-lc\\+\\+$")
+  # Suppress duplicate library warning (Xcode 15+ linker)
+  # Swift C++ interop and katagocoreml both link -lc++, which is harmless
+  target_link_options(katago PRIVATE "LINKER:-no_warn_duplicate_libraries")
   # Link MetalPerformanceShadersGraph for hybrid MPSGraph + CoreML backend
-  target_link_libraries(katago KataGoCoreML ${KATAGOCOREML_LIB} ${KATAGOCOREML_LDFLAGS_FILTERED}
+  target_link_libraries(katago KataGoCoreML ${KATAGOCOREML_LIB} ${KATAGOCOREML_LDFLAGS}
     "-framework MetalPerformanceShaders"
     "-framework MetalPerformanceShadersGraph")
   if("${CMAKE_SYSTEM_PROCESSOR}" STREQUAL "x86_64")
