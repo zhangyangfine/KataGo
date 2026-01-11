@@ -21,6 +21,7 @@ namespace Tests {
   void runBoardHandicapTest();
   void runBoardStressTest();
   void runBoardReplayTest();
+  void runCheckMoveTests();
 
 
   //testboardarea.cpp
