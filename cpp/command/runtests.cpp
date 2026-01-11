@@ -40,6 +40,7 @@ int MainCmds::runtests(const vector<string>& args) {
 
   Tests::runBoardIOTests();
   Tests::runBoardBasicTests();
+  Tests::runCheckMoveTests();
 
   Tests::runBoardAreaTests();
 
