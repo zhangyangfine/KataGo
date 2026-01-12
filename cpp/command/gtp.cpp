@@ -99,6 +99,7 @@ static const vector<string> knownCommands = {
   "cputime",
   "gomill-cpu_time",
   "kata-benchmark",
+  "kata-board-state",
 
   //Some debug commands
   "kata-debug-print-tc",
@@ -3638,6 +3639,78 @@ int MainCmds::gtp(const vector<string>& args) {
             }
           }
         }
+      }
+    }
+
+    else if(command == "kata-board-state") {
+      if(pieces.size() != 0) {
+        responseIsError = true;
+        response = "Expected no arguments for kata-board-state but got '" + Global::concat(pieces," ") + "'";
+      }
+      else {
+        const Board& board = engine->bot->getRootBoard();
+        const BoardHistory& hist = engine->bot->getRootHist();
+        Player nextPla = engine->bot->getRootPla();
+
+        // Track move number for each location (-1 = not set, 0 = initial/handicap, >0 = move number)
+        int moveNumberAtLoc[Board::MAX_ARR_SIZE];
+        std::fill_n(moveNumberAtLoc, Board::MAX_ARR_SIZE, -1);
+
+        // Mark initial board stones as move_number = 0 (handicap/setup)
+        const Board& initBoard = hist.initialBoard;
+        for(int y = 0; y < initBoard.y_size; y++) {
+          for(int x = 0; x < initBoard.x_size; x++) {
+            Loc loc = Location::getLoc(x, y, initBoard.x_size);
+            if(initBoard.colors[loc] == C_BLACK || initBoard.colors[loc] == C_WHITE)
+              moveNumberAtLoc[loc] = 0;
+          }
+        }
+
+        // Replay move history to track move numbers
+        for(size_t i = 0; i < hist.moveHistory.size(); i++) {
+          Loc moveLoc = hist.moveHistory[i].loc;
+          if(moveLoc != Board::PASS_LOC && moveLoc != Board::NULL_LOC)
+            moveNumberAtLoc[moveLoc] = (int)(i + 1);
+        }
+
+        // Build JSON output
+        nlohmann::json result;
+        result["x_size"] = board.x_size;
+        result["y_size"] = board.y_size;
+
+        nlohmann::json blackStones = nlohmann::json::array();
+        nlohmann::json whiteStones = nlohmann::json::array();
+        int blackCount = 0, whiteCount = 0;
+
+        for(int y = 0; y < board.y_size; y++) {
+          for(int x = 0; x < board.x_size; x++) {
+            Loc loc = Location::getLoc(x, y, board.x_size);
+            Color c = board.colors[loc];
+            if(c == C_BLACK || c == C_WHITE) {
+              nlohmann::json stoneInfo;
+              stoneInfo["vertex"] = Location::toString(loc, board);
+              stoneInfo["x"] = x;
+              stoneInfo["y"] = y;
+              int moveNum = moveNumberAtLoc[loc];
+              stoneInfo["move_number"] = (moveNum <= 0) ? nlohmann::json(nullptr) : nlohmann::json(moveNum);
+
+              if(c == C_BLACK) { blackStones.push_back(stoneInfo); blackCount++; }
+              else { whiteStones.push_back(stoneInfo); whiteCount++; }
+            }
+          }
+        }
+
+        result["stones"]["black"] = blackStones;
+        result["stones"]["white"] = whiteStones;
+        result["stone_count"]["black"] = blackCount;
+        result["stone_count"]["white"] = whiteCount;
+        result["stone_count"]["total"] = blackCount + whiteCount;
+        result["captures"]["black"] = board.numBlackCaptures;
+        result["captures"]["white"] = board.numWhiteCaptures;
+        result["next_player"] = (nextPla == P_BLACK) ? "black" : "white";
+        result["pass_would_end_game"] = hist.passWouldEndGame(board, nextPla);
+
+        response = result.dump();
       }
     }
 
