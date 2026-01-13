@@ -58,9 +58,7 @@ kernel void conv2d_nchw(
     constant int& kernelW [[buffer(9)]],
     constant int& dilationH [[buffer(10)]],
     constant int& dilationW [[buffer(11)]],
-    uint3 gid [[thread_position_in_grid]],
-    uint3 tid [[thread_position_in_threadgroup]],
-    uint3 tgSize [[threads_per_threadgroup]])
+    uint3 gid [[thread_position_in_grid]])
 {
     int b = gid.z / outChannels;
     int oc = gid.z % outChannels;
