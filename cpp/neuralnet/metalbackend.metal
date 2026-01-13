@@ -141,7 +141,7 @@ kernel void conv2d_1x1_nchw(
     output[outIdx] = sum;
 }
 
-// Tiled 3x3 convolution with shared memory optimization
+// Optimized 3x3 convolution with dilation support
 kernel void conv2d_3x3_nchw_tiled(
     device const float* input [[buffer(0)]],
     device const float* weights [[buffer(1)]],
@@ -153,10 +153,7 @@ kernel void conv2d_3x3_nchw_tiled(
     constant int& width [[buffer(7)]],
     constant int& dilationH [[buffer(8)]],
     constant int& dilationW [[buffer(9)]],
-    threadgroup float* sharedInput [[threadgroup(0)]],
-    uint3 gid [[thread_position_in_grid]],
-    uint3 tid [[thread_position_in_threadgroup]],
-    uint3 tgSize [[threads_per_threadgroup]])
+    uint3 gid [[thread_position_in_grid]])
 {
     int b = gid.z / outChannels;
     int oc = gid.z % outChannels;
