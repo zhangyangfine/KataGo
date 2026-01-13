@@ -121,9 +121,9 @@ elseif(USE_BACKEND STREQUAL "METAL")
 
   add_custom_command(
     OUTPUT ${METAL_SHADER_AIR}
-    COMMAND xcrun -sdk macosx metal -c ${METAL_SHADER_SOURCE} -o ${METAL_SHADER_AIR}
+    COMMAND xcrun -sdk macosx metal -std=metal3.1 -O3 -c ${METAL_SHADER_SOURCE} -o ${METAL_SHADER_AIR}
     DEPENDS ${METAL_SHADER_SOURCE}
-    COMMENT "Compiling Metal shader to AIR"
+    COMMENT "Compiling Metal shader with Metal 3.1 (Metal 4 API)"
   )
   add_custom_command(
     OUTPUT ${METAL_SHADER_LIB}

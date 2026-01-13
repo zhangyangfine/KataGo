@@ -1,15 +1,18 @@
 //
 //  metalbackend.metal
-//  Pure Metal 4 compute shaders for KataGo neural network backend
+//  Metal 4 (Metal Shading Language 3.1) compute shaders for KataGo
 //
-//  Optimized for maximum performance using:
+//  Requires: macOS 14+ / iOS 17+ (Metal 4 / MSL 3.1)
+//
+//  Metal 4 Optimizations:
+//  - SIMD group operations (simd_shuffle, simd_sum) for fast reductions
 //  - Threadgroup memory for data reuse
-//  - SIMD operations for vectorization
 //  - Memory coalescing patterns
-//  - Optimal thread dispatch
+//  - Optimal thread dispatch with non-uniform threadgroups
 //
 
 #include <metal_stdlib>
+#include <simd/simd.h>
 using namespace metal;
 
 // Constants for optimal thread dispatch
@@ -467,10 +470,27 @@ kernel void add_nc_bias(
 }
 
 // =============================================================================
-// MARK: - Reduction Operations
+// MARK: - Reduction Operations (Metal 4 SIMD optimized)
 // =============================================================================
 
+// Metal 4 SIMD group reduction helper
+inline float simd_reduce_add(float val, uint simd_lane_id, uint simd_size) {
+    // Use Metal 4's simd_shuffle for fast warp-level reduction
+    for (uint offset = simd_size / 2; offset > 0; offset >>= 1) {
+        val += simd_shuffle_down(val, offset);
+    }
+    return val;
+}
+
+inline float simd_reduce_max(float val, uint simd_lane_id, uint simd_size) {
+    for (uint offset = simd_size / 2; offset > 0; offset >>= 1) {
+        val = max(val, simd_shuffle_down(val, offset));
+    }
+    return val;
+}
+
 // Compute sum over HW dimensions for each (B, C) pair
+// Uses Metal 4 SIMD group operations for fast reduction
 kernel void reduction_sum_hw(
     device const float* input [[buffer(0)]],
     device float* output [[buffer(1)]],
@@ -481,7 +501,10 @@ kernel void reduction_sum_hw(
     threadgroup float* sharedData [[threadgroup(0)]],
     uint2 gid [[thread_position_in_grid]],
     uint tid [[thread_index_in_threadgroup]],
-    uint tgSize [[threads_per_threadgroup]])
+    uint tgSize [[threads_per_threadgroup]],
+    uint simd_lane_id [[thread_index_in_simdgroup]],
+    uint simd_group_id [[simdgroup_index_in_threadgroup]],
+    uint simd_size [[threads_per_simdgroup]])
 {
     int b = gid.y / channels;
     int c = gid.y % channels;
@@ -497,23 +520,33 @@ kernel void reduction_sum_hw(
         sum += input[baseIdx + i];
     }
 
-    sharedData[tid] = sum;
+    // Metal 4: SIMD group reduction (fast warp-level reduction)
+    sum = simd_reduce_add(sum, simd_lane_id, simd_size);
+
+    // Store SIMD group results to shared memory
+    if (simd_lane_id == 0) {
+        sharedData[simd_group_id] = sum;
+    }
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
-    // Parallel reduction in shared memory
-    for (uint stride = tgSize / 2; stride > 0; stride >>= 1) {
-        if (tid < stride) {
-            sharedData[tid] += sharedData[tid + stride];
-        }
-        threadgroup_barrier(mem_flags::mem_threadgroup);
+    // Final reduction across SIMD groups
+    uint numSimdGroups = (tgSize + simd_size - 1) / simd_size;
+    if (tid < numSimdGroups) {
+        sum = sharedData[tid];
+    } else {
+        sum = 0.0f;
     }
 
-    if (tid == 0) {
-        output[b * channels + c] = sharedData[0];
+    if (tid < simd_size) {
+        sum = simd_reduce_add(sum, simd_lane_id, simd_size);
+        if (tid == 0) {
+            output[b * channels + c] = sum;
+        }
     }
 }
 
 // Compute max over HW dimensions for each (B, C) pair
+// Uses Metal 4 SIMD group operations for fast reduction
 // Applies mask by subtracting 1 from mask and adding to input
 kernel void reduction_max_hw_masked(
     device const float* input [[buffer(0)]],
@@ -526,7 +559,10 @@ kernel void reduction_max_hw_masked(
     threadgroup float* sharedData [[threadgroup(0)]],
     uint2 gid [[thread_position_in_grid]],
     uint tid [[thread_index_in_threadgroup]],
-    uint tgSize [[threads_per_threadgroup]])
+    uint tgSize [[threads_per_threadgroup]],
+    uint simd_lane_id [[thread_index_in_simdgroup]],
+    uint simd_group_id [[simdgroup_index_in_threadgroup]],
+    uint simd_size [[threads_per_simdgroup]])
 {
     int b = gid.y / channels;
     int c = gid.y % channels;
@@ -545,19 +581,28 @@ kernel void reduction_max_hw_masked(
         maxVal = max(maxVal, val);
     }
 
-    sharedData[tid] = maxVal;
+    // Metal 4: SIMD group reduction (fast warp-level reduction)
+    maxVal = simd_reduce_max(maxVal, simd_lane_id, simd_size);
+
+    // Store SIMD group results to shared memory
+    if (simd_lane_id == 0) {
+        sharedData[simd_group_id] = maxVal;
+    }
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
-    // Parallel reduction in shared memory
-    for (uint stride = tgSize / 2; stride > 0; stride >>= 1) {
-        if (tid < stride) {
-            sharedData[tid] = max(sharedData[tid], sharedData[tid + stride]);
-        }
-        threadgroup_barrier(mem_flags::mem_threadgroup);
+    // Final reduction across SIMD groups
+    uint numSimdGroups = (tgSize + simd_size - 1) / simd_size;
+    if (tid < numSimdGroups) {
+        maxVal = sharedData[tid];
+    } else {
+        maxVal = -INFINITY;
     }
 
-    if (tid == 0) {
-        output[b * channels + c] = sharedData[0];
+    if (tid < simd_size) {
+        maxVal = simd_reduce_max(maxVal, simd_lane_id, simd_size);
+        if (tid == 0) {
+            output[b * channels + c] = maxVal;
+        }
     }
 }
 
