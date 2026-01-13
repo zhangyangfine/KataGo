@@ -724,7 +724,6 @@ public func createMetalComputeContext(
 /// A class that represents a handle to the GPU device using pure Metal 4 compute shaders.
 /// This implementation provides maximum performance by using direct Metal compute pipelines
 /// instead of MPSGraph for all neural network operations.
-@available(macOS 26.0, iOS 26.0, *)
 public class MetalComputeHandle {
     let model: PureMetalModel
 

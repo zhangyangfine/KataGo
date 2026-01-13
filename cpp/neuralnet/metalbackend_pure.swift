@@ -13,7 +13,6 @@ import Metal
 
 /// Manages Metal 4 compute pipeline states and command infrastructure
 /// Requires macOS 26+ / iOS 26+ for Metal 4 support
-@available(macOS 26.0, iOS 26.0, *)
 class MetalPipelineManager {
     let device: MTLDevice
     let library: MTLLibrary
@@ -179,7 +178,6 @@ enum MetalError: Error {
 // MARK: - Metal 4 Buffer Manager
 
 /// Manages GPU buffers with Metal 4 resource management
-@available(macOS 26.0, iOS 26.0, *)
 class MetalBufferManager {
     let device: MTLDevice
     let pipelineManager: MetalPipelineManager?
@@ -253,7 +251,6 @@ class MetalBufferManager {
 // MARK: - Metal 4 Compute Dispatcher
 
 /// Dispatches compute kernels with Metal 4 optimized thread configuration
-@available(macOS 26.0, iOS 26.0, *)
 class MetalComputeDispatcher {
     let pipelineManager: MetalPipelineManager
 

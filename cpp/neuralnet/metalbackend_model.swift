@@ -47,7 +47,6 @@ struct BiasWeightBuffers {
 /// Pure Metal 4 implementation of the KataGo neural network model
 /// Uses Metal 4 APIs for maximum performance: decoupled command buffers,
 /// residency sets, and optimized resource management
-@available(macOS 26.0, iOS 26.0, *)
 class PureMetalModel {
     let device: MTLDevice
     let pipelineManager: MetalPipelineManager
