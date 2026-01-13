@@ -271,10 +271,18 @@ class PureMetalModel {
     private func allocateIntermediateBuffers() {
         let hw = nnXLen * nnYLen
         let trunkChannels = descriptor.trunk.trunkNumChannels.intValue
+        let inputChannels = descriptor.numInputChannels.intValue
+        let globalChannels = descriptor.numInputGlobalChannels.intValue
+        let metaChannels = descriptor.numInputMetaChannels.intValue
 
         // Calculate required buffer sizes
         let spatialSize = maxBatchSize * trunkChannels * hw * 4
         let globalSize = maxBatchSize * trunkChannels * 3 * 4  // For global pooling concat
+
+        // Pre-allocate input buffers to avoid per-inference allocation
+        intermediateBuffers["input"] = bufferManager.createBuffer(name: "input", size: maxBatchSize * inputChannels * hw * 4)
+        intermediateBuffers["inputGlobal"] = bufferManager.createBuffer(name: "inputGlobal", size: maxBatchSize * globalChannels * 4)
+        intermediateBuffers["inputMeta"] = bufferManager.createBuffer(name: "inputMeta", size: maxBatchSize * metaChannels * 4)
 
         // Allocate reusable intermediate buffers using the buffer manager
         intermediateBuffers["trunk0"] = bufferManager.createBuffer(name: "trunk0", size: spatialSize)
@@ -353,23 +361,19 @@ class PureMetalModel {
         let globalChannels = descriptor.numInputGlobalChannels.intValue
         let metaChannels = descriptor.numInputMetaChannels.intValue
 
-        // Create input buffers
+        // Copy input data to pre-allocated buffers (avoids per-inference allocation)
         let inputSize = batchSize * inputChannels * hw * 4
         let globalSize = batchSize * globalChannels * 4
         let metaSize = batchSize * metaChannels * 4
 
-        guard let inputBuffer = device.makeBuffer(bytes: input, length: inputSize, options: .storageModeShared),
-              let globalBuffer = device.makeBuffer(bytes: inputGlobal, length: globalSize, options: .storageModeShared),
-              let metaBuffer = device.makeBuffer(bytes: inputMeta, length: metaSize, options: .storageModeShared) else {
+        guard let inputBuffer = intermediateBuffers["input"],
+              let globalBuffer = intermediateBuffers["inputGlobal"],
+              let metaBuffer = intermediateBuffers["inputMeta"] else {
             return
         }
-        inputBuffer.label = "input"
-        globalBuffer.label = "inputGlobal"
-        metaBuffer.label = "inputMeta"
-
-        // Extract mask from first channel of input
-        let maskBuffer = intermediateBuffers["mask"]!
-        extractMask(input: inputBuffer, mask: maskBuffer, batchSize: batchSize, channels: inputChannels, hw: hw)
+        memcpy(inputBuffer.contents(), input, inputSize)
+        memcpy(globalBuffer.contents(), inputGlobal, globalSize)
+        memcpy(metaBuffer.contents(), inputMeta, metaSize)
 
         // Metal 4: Use single compute command encoder for entire network
         // This reduces encoder overhead and enables better GPU scheduling
@@ -377,6 +381,17 @@ class PureMetalModel {
             return
         }
         encoder.label = "Neural Network Encoder"
+
+        // Extract mask from first channel of input using GPU kernel
+        let maskBuffer = intermediateBuffers["mask"]!
+        dispatcher.dispatchExtractMask(
+            encoder: encoder,
+            input: inputBuffer,
+            mask: maskBuffer,
+            batchSize: batchSize,
+            channels: inputChannels,
+            hw: hw
+        )
 
         // Compute mask statistics
         computeMaskStatistics(encoder: encoder, batchSize: batchSize)
@@ -419,17 +434,6 @@ class PureMetalModel {
         }
     }
 
-    private func extractMask(input: MTLBuffer, mask: MTLBuffer, batchSize: Int, channels: Int, hw: Int) {
-        // Copy first channel from input to mask (stride copy)
-        let inputPtr = input.contents().assumingMemoryBound(to: Float32.self)
-        let maskPtr = mask.contents().assumingMemoryBound(to: Float32.self)
-
-        for b in 0..<batchSize {
-            for i in 0..<hw {
-                maskPtr[b * hw + i] = inputPtr[b * channels * hw + i]
-            }
-        }
-    }
 
     private func computeMaskStatistics(encoder: MTLComputeCommandEncoder, batchSize: Int) {
         let mask = intermediateBuffers["mask"]!

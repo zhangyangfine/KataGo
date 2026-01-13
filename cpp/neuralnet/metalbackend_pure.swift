@@ -48,6 +48,7 @@ class MetalPipelineManager {
     var matBiasAddPipeline: MTLComputePipelineState!
     var residualAddPipeline: MTLComputePipelineState!
     var copyBufferPipeline: MTLComputePipelineState!
+    var extractMaskPipeline: MTLComputePipelineState!
 
     init(device: MTLDevice) throws {
         self.device = device
@@ -81,14 +82,17 @@ class MetalPipelineManager {
             // Try to compile from source
             let sourcePath = Bundle.main.path(forResource: "metalbackend", ofType: "metal")
             if let path = sourcePath, let source = try? String(contentsOfFile: path) {
-                // Use Metal 3.1 compilation options
+                // Use Metal 4.0 compilation options
                 let options = MTLCompileOptions()
-                options.languageVersion = .version3_1
+                options.languageVersion = .version4_0  // MSL 4.0 for Metal 4
                 options.fastMathEnabled = true
                 self.library = try device.makeLibrary(source: source, options: options)
             } else {
                 // Use default library
-                self.library = device.makeDefaultLibrary()!
+                guard let defaultLibrary = device.makeDefaultLibrary() else {
+                    throw MetalError.functionNotFound("default library")
+                }
+                self.library = defaultLibrary
             }
             try createPipelines()
             return
@@ -122,6 +126,7 @@ class MetalPipelineManager {
         matBiasAddPipeline = try createOptimizedPipeline("mat_bias_add")
         residualAddPipeline = try createOptimizedPipeline("residual_add")
         copyBufferPipeline = try createOptimizedPipeline("copy_buffer")
+        extractMaskPipeline = try createOptimizedPipeline("extract_mask")
     }
 
     private func createOptimizedPipeline(_ name: String) throws -> MTLComputePipelineState {
@@ -650,6 +655,31 @@ class MetalComputeDispatcher {
 
         let threadsPerGrid = MTLSize(width: batchSize, height: 1, depth: 1)
         let threadsPerGroup = MTLSize(width: min(simdWidth * 8, batchSize), height: 1, depth: 1)
+        encoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
+    }
+
+    func dispatchExtractMask(
+        encoder: MTLComputeCommandEncoder,
+        input: MTLBuffer,
+        mask: MTLBuffer,
+        batchSize: Int,
+        channels: Int,
+        hw: Int
+    ) {
+        encoder.setComputePipelineState(pipelineManager.extractMaskPipeline)
+        encoder.setBuffer(input, offset: 0, index: 0)
+        encoder.setBuffer(mask, offset: 0, index: 1)
+
+        var bs = Int32(batchSize)
+        var c = Int32(channels)
+        var hwVal = Int32(hw)
+
+        encoder.setBytes(&bs, length: 4, index: 2)
+        encoder.setBytes(&c, length: 4, index: 3)
+        encoder.setBytes(&hwVal, length: 4, index: 4)
+
+        let threadsPerGrid = MTLSize(width: hw, height: batchSize, depth: 1)
+        let threadsPerGroup = optimalThreadgroupSize(for: pipelineManager.extractMaskPipeline, workSize: threadsPerGrid)
         encoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
     }
 }

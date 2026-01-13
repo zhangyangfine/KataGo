@@ -1,8 +1,8 @@
 //
 //  metalbackend.metal
-//  Metal 4 (Metal Shading Language 3.1) compute shaders for KataGo
+//  Metal 4 (Metal Shading Language 4.0) compute shaders for KataGo
 //
-//  Requires: macOS 14+ / iOS 17+ (Metal 4 / MSL 3.1)
+//  Requires: macOS 26+ / iOS 26+ (Metal 4 / MSL 4.0)
 //
 //  Metal 4 Optimizations:
 //  - SIMD group operations (simd_shuffle, simd_sum) for fast reductions
@@ -833,6 +833,25 @@ kernel void copy_buffer(
 {
     if (gid >= uint(size)) return;
     output[gid] = input[gid];
+}
+
+// Extract first channel from NCHW input to create mask
+// Input: [B, C, H, W], Output: [B, H*W] (first channel only)
+kernel void extract_mask(
+    device const float* input [[buffer(0)]],
+    device float* mask [[buffer(1)]],
+    constant int& batchSize [[buffer(2)]],
+    constant int& channels [[buffer(3)]],
+    constant int& hw [[buffer(4)]],
+    uint2 gid [[thread_position_in_grid]])
+{
+    int b = gid.y;
+    int i = gid.x;
+
+    if (b >= batchSize || i >= hw) return;
+
+    // Copy first channel value to mask
+    mask[b * hw + i] = input[b * channels * hw + i];
 }
 
 // Reshape from NCHW [B, C, 1, 1] to NC [B, C] (for MatMul input)
