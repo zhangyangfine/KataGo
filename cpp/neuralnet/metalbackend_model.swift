@@ -355,8 +355,7 @@ class PureMetalModel {
         memcpy(globalBuffer.contents(), inputGlobal, globalSize)
         memcpy(metaBuffer.contents(), inputMeta, metaSize)
 
-        // Metal 4: Use single compute command encoder for entire network
-        // This reduces encoder overhead and enables better GPU scheduling
+        // Metal 4: Use MTL4ComputeCommandEncoder (unified encoder for compute, blits, acceleration)
         guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
             return
         }
@@ -387,8 +386,8 @@ class PureMetalModel {
 
         encoder.endEncoding()
 
-        // Metal 4: Submit command buffer to queue
-        commandBuffer.commit()
+        // Metal 4: Submit command buffer to MTL4CommandQueue and wait
+        pipelineManager.submit(commandBuffer)
         commandBuffer.waitUntilCompleted()
 
         // Copy outputs
@@ -415,7 +414,7 @@ class PureMetalModel {
     }
 
 
-    private func computeMaskStatistics(encoder: MTLComputeCommandEncoder, batchSize: Int) {
+    private func computeMaskStatistics(encoder: MTL4ComputeCommandEncoder, batchSize: Int) {
         let mask = intermediateBuffers["mask"]!
         let maskSum = intermediateBuffers["maskSum"]!
         let maskSumSqrtS14M01 = intermediateBuffers["maskSumSqrtS14M01"]!
@@ -426,7 +425,7 @@ class PureMetalModel {
         dispatcher.dispatchMaskSumSqrtS14M01SquareS01(encoder: encoder, maskSumSqrtS14M01: maskSumSqrtS14M01, output: maskSumSqrtS14M01SquareS01, batchSize: batchSize)
     }
 
-    private func runTrunk(encoder: MTLComputeCommandEncoder, input: MTLBuffer, global: MTLBuffer, meta: MTLBuffer, batchSize: Int) -> MTLBuffer {
+    private func runTrunk(encoder: MTL4ComputeCommandEncoder, input: MTLBuffer, global: MTLBuffer, meta: MTLBuffer, batchSize: Int) -> MTLBuffer {
         let trunk = descriptor.trunk
         let trunkChannels = trunk.trunkNumChannels.intValue
         let mask = intermediateBuffers["mask"]!
@@ -505,7 +504,7 @@ class PureMetalModel {
         return currentBuffer
     }
 
-    private func runResidualBlock(encoder: MTLComputeCommandEncoder, block: SWResidualBlockDesc, index: Int, input: MTLBuffer, output: MTLBuffer, batchSize: Int) {
+    private func runResidualBlock(encoder: MTL4ComputeCommandEncoder, block: SWResidualBlockDesc, index: Int, input: MTLBuffer, output: MTLBuffer, batchSize: Int) {
         let prefix = "trunk.block\(index)"
         let mask = intermediateBuffers["mask"]!
         let convOut = intermediateBuffers["conv_out"]!
@@ -532,7 +531,7 @@ class PureMetalModel {
         dispatcher.dispatchElementwiseAdd(encoder: encoder, a: input, b: convOut, output: output, size: batchSize * channels * nnYLen * nnXLen)
     }
 
-    private func runGlobalPoolingResidualBlock(encoder: MTLComputeCommandEncoder, block: SWGlobalPoolingResidualBlockDesc, index: Int, input: MTLBuffer, output: MTLBuffer, batchSize: Int) {
+    private func runGlobalPoolingResidualBlock(encoder: MTL4ComputeCommandEncoder, block: SWGlobalPoolingResidualBlockDesc, index: Int, input: MTLBuffer, output: MTLBuffer, batchSize: Int) {
         let prefix = "trunk.block\(index)"
         let mask = intermediateBuffers["mask"]!
         let maskSum = intermediateBuffers["maskSum"]!
@@ -581,7 +580,7 @@ class PureMetalModel {
         dispatcher.dispatchElementwiseAdd(encoder: encoder, a: input, b: convOut, output: output, size: batchSize * channels * nnYLen * nnXLen)
     }
 
-    private func runPolicyHead(encoder: MTLComputeCommandEncoder, trunkOutput: MTLBuffer, batchSize: Int) -> (MTLBuffer?, MTLBuffer?) {
+    private func runPolicyHead(encoder: MTL4ComputeCommandEncoder, trunkOutput: MTLBuffer, batchSize: Int) -> (MTLBuffer?, MTLBuffer?) {
         let policyDesc = descriptor.policyHead
         let mask = intermediateBuffers["mask"]!
         let maskSum = intermediateBuffers["maskSum"]!
@@ -643,7 +642,7 @@ class PureMetalModel {
         return (policyBuffer, passBuffer)
     }
 
-    private func runValueHead(encoder: MTLComputeCommandEncoder, trunkOutput: MTLBuffer, batchSize: Int) -> (MTLBuffer?, MTLBuffer?, MTLBuffer?) {
+    private func runValueHead(encoder: MTL4ComputeCommandEncoder, trunkOutput: MTLBuffer, batchSize: Int) -> (MTLBuffer?, MTLBuffer?, MTLBuffer?) {
         let valueDesc = descriptor.valueHead
         let mask = intermediateBuffers["mask"]!
         let maskSum = intermediateBuffers["maskSum"]!

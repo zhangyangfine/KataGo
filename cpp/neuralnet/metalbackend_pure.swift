@@ -12,16 +12,19 @@ import Metal
 // MARK: - Metal 4 Pipeline Manager
 
 /// Manages Metal 4 compute pipeline states and command infrastructure
-/// Requires macOS 26+ / iOS 26+ for Metal 4 support
+/// Uses MTL4* types for true Metal 4 implementation
 class MetalPipelineManager {
     let device: MTLDevice
     let library: MTLLibrary
 
     // Metal 4 command infrastructure
-    let mtl4CommandQueue: MTLCommandQueue
-    let commandAllocator: MTLHeap?
+    let mtl4CommandQueue: MTL4CommandQueue
+    let commandAllocator: MTL4CommandAllocator
 
-    // Residency set for resource management (Metal 4)
+    // Metal 4 compiler for pipeline creation
+    let mtl4Compiler: MTL4Compiler
+
+    // Residency set for resource management
     let residencySet: MTLResidencySet
 
     // Compute pipelines for each kernel
@@ -53,42 +56,46 @@ class MetalPipelineManager {
     init(device: MTLDevice) throws {
         self.device = device
 
-        // Create Metal 4 command queue with high priority
-        // MTL4CommandQueue provides decoupled command buffers for parallel encoding
-        let queueDescriptor = MTLCommandQueueDescriptor()
-        queueDescriptor.maxCommandBufferCount = 64  // Allow more in-flight command buffers
-
-        guard let queue = device.makeCommandQueue(descriptor: queueDescriptor) else {
+        // Create Metal 4 command queue
+        guard let queue = device.makeMTL4CommandQueue() else {
             throw MetalError.commandBufferCreationFailed
         }
+        queue.label = "KataGo MTL4 Command Queue"
         self.mtl4CommandQueue = queue
 
-        // Create a heap for pre-allocated buffer memory (Metal 4 style resource management)
-        let heapDescriptor = MTLHeapDescriptor()
-        heapDescriptor.size = 256 * 1024 * 1024  // 256 MB heap for command allocations
-        heapDescriptor.storageMode = .shared
-        heapDescriptor.type = .automatic
-        self.commandAllocator = device.makeHeap(descriptor: heapDescriptor)
+        // Create Metal 4 command allocator for explicit memory management
+        let allocatorDescriptor = MTL4CommandAllocatorDescriptor()
+        allocatorDescriptor.label = "KataGo Command Allocator"
+        guard let allocator = device.makeCommandAllocator(descriptor: allocatorDescriptor) else {
+            throw MetalError.commandBufferCreationFailed
+        }
+        self.commandAllocator = allocator
 
-        // Create residency set for efficient resource management (Metal 4)
+        // Create Metal 4 compiler for pipeline creation
+        let compilerDescriptor = MTL4CompilerDescriptor()
+        compilerDescriptor.label = "KataGo MTL4 Compiler"
+        guard let compiler = device.makeCompiler(descriptor: compilerDescriptor) else {
+            throw MetalError.commandBufferCreationFailed
+        }
+        self.mtl4Compiler = compiler
+
+        // Create residency set for efficient resource management
         let residencyDescriptor = MTLResidencySetDescriptor()
         residencyDescriptor.label = "KataGo Residency Set"
-        residencyDescriptor.initialCapacity = 1024  // Expected number of resources
+        residencyDescriptor.initialCapacity = 1024
         self.residencySet = try device.makeResidencySet(descriptor: residencyDescriptor)
 
-        // Load the Metal library from the compiled .metallib or source
+        // Load the Metal library
         guard let libraryPath = Bundle.main.path(forResource: "metalbackend", ofType: "metallib"),
               let lib = try? device.makeLibrary(filepath: libraryPath) else {
             // Try to compile from source
             let sourcePath = Bundle.main.path(forResource: "metalbackend", ofType: "metal")
             if let path = sourcePath, let source = try? String(contentsOfFile: path) {
-                // Use Metal 4.0 compilation options
                 let options = MTLCompileOptions()
                 options.languageVersion = .version4_0  // MSL 4.0 for Metal 4
                 options.fastMathEnabled = true
                 self.library = try device.makeLibrary(source: source, options: options)
             } else {
-                // Use default library
                 guard let defaultLibrary = device.makeDefaultLibrary() else {
                     throw MetalError.functionNotFound("default library")
                 }
@@ -102,7 +109,7 @@ class MetalPipelineManager {
     }
 
     private func createPipelines() throws {
-        // Create pipelines with optimized descriptors for Metal 4
+        // Create pipelines using Metal 4 compiler
         conv2dPipeline = try createOptimizedPipeline("conv2d_nchw")
         conv2d1x1Pipeline = try createOptimizedPipeline("conv2d_1x1_nchw")
         conv2d3x3TiledPipeline = try createOptimizedPipeline("conv2d_3x3_nchw_tiled")
@@ -134,36 +141,23 @@ class MetalPipelineManager {
             throw MetalError.functionNotFound(name)
         }
 
-        // Use pipeline descriptor for Metal 4 optimizations
+        // Use MTL4Compiler for pipeline creation
         let descriptor = MTLComputePipelineDescriptor()
         descriptor.computeFunction = function
         descriptor.label = name
-
-        // Enable optimizations
         descriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth = true
-
-        // Support indirect command buffers for Metal 4
         descriptor.supportIndirectCommandBuffers = true
 
-        // Metal 4: Enable dynamic libraries linking if needed
-        // supportAddingBinaryFunctions available since macOS 11.0
-        descriptor.supportAddingBinaryFunctions = false  // We don't need dynamic functions
-
-        return try device.makeComputePipelineState(descriptor: descriptor, options: [], reflection: nil)
+        return try mtl4Compiler.makeComputePipelineState(descriptor: descriptor)
     }
 
-    /// Create a command buffer using Metal 4's decoupled model
-    func makeCommandBuffer() -> MTLCommandBuffer? {
-        // Metal 4: Command buffers are independent of queues
-        // Use retained references mode for explicit resource lifetime control
-        let descriptor = MTLCommandBufferDescriptor()
-        descriptor.retainedReferences = false  // Better performance with explicit management
-        descriptor.errorOptions = .encoderExecutionStatus
-
-        return mtl4CommandQueue.makeCommandBuffer(descriptor: descriptor)
+    /// Create a Metal 4 command buffer from device (not queue)
+    func makeCommandBuffer() -> MTL4CommandBuffer? {
+        // Metal 4: Command buffers are created from device with explicit allocator
+        return device.makeCommandBuffer(allocator: commandAllocator)
     }
 
-    /// Add a buffer to the residency set for Metal 4 resource management
+    /// Add a buffer to the residency set
     func addToResidencySet(_ buffer: MTLBuffer) {
         residencySet.addAllocation(buffer)
     }
@@ -171,6 +165,11 @@ class MetalPipelineManager {
     /// Commit the residency set before execution
     func commitResidency() {
         residencySet.commit()
+    }
+
+    /// Submit command buffer to Metal 4 queue
+    func submit(_ commandBuffer: MTL4CommandBuffer) {
+        mtl4CommandQueue.submit(commandBuffer)
     }
 }
 
@@ -255,7 +254,8 @@ class MetalBufferManager {
 
 // MARK: - Metal 4 Compute Dispatcher
 
-/// Dispatches compute kernels with Metal 4 optimized thread configuration
+/// Dispatches compute kernels using MTL4ComputeCommandEncoder
+/// MTL4ComputeCommandEncoder is a unified encoder that handles compute, blits, and acceleration structures
 class MetalComputeDispatcher {
     let pipelineManager: MetalPipelineManager
 
@@ -286,7 +286,7 @@ class MetalComputeDispatcher {
     }
 
     func dispatchConv2D(
-        encoder: MTLComputeCommandEncoder,
+        encoder: MTL4ComputeCommandEncoder,
         input: MTLBuffer,
         weights: MTLBuffer,
         output: MTLBuffer,
@@ -343,7 +343,7 @@ class MetalComputeDispatcher {
     }
 
     func dispatchBatchNorm(
-        encoder: MTLComputeCommandEncoder,
+        encoder: MTL4ComputeCommandEncoder,
         input: MTLBuffer,
         scale: MTLBuffer,
         bias: MTLBuffer,
@@ -388,7 +388,7 @@ class MetalComputeDispatcher {
     }
 
     func dispatchActivation(
-        encoder: MTLComputeCommandEncoder,
+        encoder: MTL4ComputeCommandEncoder,
         input: MTLBuffer,
         output: MTLBuffer,
         size: Int,
@@ -419,7 +419,7 @@ class MetalComputeDispatcher {
     }
 
     func dispatchMatMul(
-        encoder: MTLComputeCommandEncoder,
+        encoder: MTL4ComputeCommandEncoder,
         A: MTLBuffer,
         B: MTLBuffer,
         C: MTLBuffer,
@@ -446,7 +446,7 @@ class MetalComputeDispatcher {
     }
 
     func dispatchAddNCBias(
-        encoder: MTLComputeCommandEncoder,
+        encoder: MTL4ComputeCommandEncoder,
         input: MTLBuffer,
         bias: MTLBuffer,
         output: MTLBuffer,
@@ -476,7 +476,7 @@ class MetalComputeDispatcher {
     }
 
     func dispatchElementwiseAdd(
-        encoder: MTLComputeCommandEncoder,
+        encoder: MTL4ComputeCommandEncoder,
         a: MTLBuffer,
         b: MTLBuffer,
         output: MTLBuffer,
@@ -496,7 +496,7 @@ class MetalComputeDispatcher {
     }
 
     func dispatchMatBiasAdd(
-        encoder: MTLComputeCommandEncoder,
+        encoder: MTL4ComputeCommandEncoder,
         input: MTLBuffer,
         bias: MTLBuffer,
         output: MTLBuffer,
@@ -520,7 +520,7 @@ class MetalComputeDispatcher {
     }
 
     func dispatchGlobalPooling(
-        encoder: MTLComputeCommandEncoder,
+        encoder: MTL4ComputeCommandEncoder,
         input: MTLBuffer,
         mask: MTLBuffer,
         maskSum: MTLBuffer,
@@ -559,7 +559,7 @@ class MetalComputeDispatcher {
     }
 
     func dispatchGlobalPoolingValue(
-        encoder: MTLComputeCommandEncoder,
+        encoder: MTL4ComputeCommandEncoder,
         input: MTLBuffer,
         maskSum: MTLBuffer,
         maskSumSqrtS14M01: MTLBuffer,
@@ -596,7 +596,7 @@ class MetalComputeDispatcher {
     }
 
     func dispatchMaskSum(
-        encoder: MTLComputeCommandEncoder,
+        encoder: MTL4ComputeCommandEncoder,
         mask: MTLBuffer,
         maskSum: MTLBuffer,
         batchSize: Int,
@@ -623,7 +623,7 @@ class MetalComputeDispatcher {
     }
 
     func dispatchMaskSumSqrtS14M01(
-        encoder: MTLComputeCommandEncoder,
+        encoder: MTL4ComputeCommandEncoder,
         maskSum: MTLBuffer,
         output: MTLBuffer,
         batchSize: Int
@@ -641,7 +641,7 @@ class MetalComputeDispatcher {
     }
 
     func dispatchMaskSumSqrtS14M01SquareS01(
-        encoder: MTLComputeCommandEncoder,
+        encoder: MTL4ComputeCommandEncoder,
         maskSumSqrtS14M01: MTLBuffer,
         output: MTLBuffer,
         batchSize: Int
@@ -659,7 +659,7 @@ class MetalComputeDispatcher {
     }
 
     func dispatchExtractMask(
-        encoder: MTLComputeCommandEncoder,
+        encoder: MTL4ComputeCommandEncoder,
         input: MTLBuffer,
         mask: MTLBuffer,
         batchSize: Int,
