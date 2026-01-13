@@ -330,9 +330,15 @@ class MetalComputeDispatcher {
         encoder.setBytes(&h, length: 4, index: 6)
         encoder.setBytes(&w, length: 4, index: 7)
 
-        // 1x1 conv kernel only takes 8 params (0-7), no dilation needed
-        // 3x3 and general convs take kernel size at 8-9, dilation at 10-11
-        if kernelH != 1 || kernelW != 1 {
+        // Set kernel-specific parameters based on which pipeline is used
+        if kernelH == 1 && kernelW == 1 {
+            // 1x1 conv: no additional params (indices 0-7 only)
+        } else if kernelH == 3 && kernelW == 3 {
+            // 3x3 tiled conv: dilation at indices 8-9 (no kernel size needed)
+            encoder.setBytes(&dh, length: 4, index: 8)
+            encoder.setBytes(&dw, length: 4, index: 9)
+        } else {
+            // General conv: kernel size at 8-9, dilation at 10-11
             encoder.setBytes(&kh, length: 4, index: 8)
             encoder.setBytes(&kw, length: 4, index: 9)
             encoder.setBytes(&dh, length: 4, index: 10)
