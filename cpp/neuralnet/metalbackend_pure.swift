@@ -2,6 +2,9 @@
 //  metalbackend_pure.swift
 //  Pure Metal 4 backend for KataGo - uses MTL4 APIs for maximum performance
 //
+//  Requires: macOS 26 (Tahoe) / iOS 26 or later, Apple Silicon (M1/A14+)
+//  Metal 4 was announced at WWDC 2025
+//
 
 import Foundation
 import Metal
@@ -9,16 +12,18 @@ import Metal
 // MARK: - Metal 4 Pipeline Manager
 
 /// Manages Metal 4 compute pipeline states and command infrastructure
+/// Requires macOS 26+ / iOS 26+ for Metal 4 support
+@available(macOS 26.0, iOS 26.0, *)
 class MetalPipelineManager {
     let device: MTLDevice
     let library: MTLLibrary
 
     // Metal 4 command infrastructure
-    let mtl4CommandQueue: MTLCommandQueue  // MTL4CommandQueue
-    let commandAllocator: MTLHeap?  // For pre-allocated command buffer memory
+    let mtl4CommandQueue: MTLCommandQueue
+    let commandAllocator: MTLHeap?
 
-    // Residency set for resource management (Metal 4 feature)
-    var residencySet: MTLResidencySet?
+    // Residency set for resource management (Metal 4)
+    let residencySet: MTLResidencySet
 
     // Compute pipelines for each kernel
     var conv2dPipeline: MTLComputePipelineState!
@@ -65,16 +70,11 @@ class MetalPipelineManager {
         heapDescriptor.type = .automatic
         self.commandAllocator = device.makeHeap(descriptor: heapDescriptor)
 
-        // Create residency set for efficient resource management (Metal 4 feature)
-        // Metal 4 requires macOS 26 (Tahoe) / iOS 26, announced at WWDC 2025
-        if #available(macOS 26.0, iOS 26.0, *) {
-            let residencyDescriptor = MTLResidencySetDescriptor()
-            residencyDescriptor.label = "KataGo Residency Set"
-            residencyDescriptor.initialCapacity = 1024  // Expected number of resources
-            self.residencySet = try? device.makeResidencySet(descriptor: residencyDescriptor)
-        } else {
-            self.residencySet = nil
-        }
+        // Create residency set for efficient resource management (Metal 4)
+        let residencyDescriptor = MTLResidencySetDescriptor()
+        residencyDescriptor.label = "KataGo Residency Set"
+        residencyDescriptor.initialCapacity = 1024  // Expected number of resources
+        self.residencySet = try device.makeResidencySet(descriptor: residencyDescriptor)
 
         // Load the Metal library from the compiled .metallib or source
         guard let libraryPath = Bundle.main.path(forResource: "metalbackend", ofType: "metallib"),
@@ -161,16 +161,12 @@ class MetalPipelineManager {
 
     /// Add a buffer to the residency set for Metal 4 resource management
     func addToResidencySet(_ buffer: MTLBuffer) {
-        if #available(macOS 26.0, iOS 26.0, *) {
-            residencySet?.addAllocation(buffer)
-        }
+        residencySet.addAllocation(buffer)
     }
 
     /// Commit the residency set before execution
     func commitResidency() {
-        if #available(macOS 26.0, iOS 26.0, *) {
-            residencySet?.commit()
-        }
+        residencySet.commit()
     }
 }
 
@@ -183,6 +179,7 @@ enum MetalError: Error {
 // MARK: - Metal 4 Buffer Manager
 
 /// Manages GPU buffers with Metal 4 resource management
+@available(macOS 26.0, iOS 26.0, *)
 class MetalBufferManager {
     let device: MTLDevice
     let pipelineManager: MetalPipelineManager?
@@ -256,6 +253,7 @@ class MetalBufferManager {
 // MARK: - Metal 4 Compute Dispatcher
 
 /// Dispatches compute kernels with Metal 4 optimized thread configuration
+@available(macOS 26.0, iOS 26.0, *)
 class MetalComputeDispatcher {
     let pipelineManager: MetalPipelineManager
 

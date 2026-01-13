@@ -2,7 +2,10 @@
 //  metalbackend.swift
 //  Pure Metal 4 backend for KataGo - Maximum performance neural network inference
 //
-//  This implementation uses pure Metal compute shaders for all operations,
+//  Requires: macOS 26 (Tahoe) / iOS 26 or later, Apple Silicon (M1/A14+)
+//  Metal 4 was announced at WWDC 2025
+//
+//  This implementation uses pure Metal 4 compute shaders for all operations,
 //  providing direct GPU control for optimal performance on Apple Silicon.
 //
 
@@ -721,6 +724,7 @@ public func createMetalComputeContext(
 /// A class that represents a handle to the GPU device using pure Metal 4 compute shaders.
 /// This implementation provides maximum performance by using direct Metal compute pipelines
 /// instead of MPSGraph for all neural network operations.
+@available(macOS 26.0, iOS 26.0, *)
 public class MetalComputeHandle {
     let model: PureMetalModel
 
