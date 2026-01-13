@@ -19,7 +19,7 @@ ActivationKind activationLayerDescToSwift(const ActivationLayerDesc * desc);
 SWResidualBlockDesc residualBlockDescToSwift(const ResidualBlockDesc * desc);
 SWMatMulLayerDesc matMulLayerDescToSwift(const MatMulLayerDesc * desc);
 SWGlobalPoolingResidualBlockDesc globalPoolingResidualBlockDescToSwift(const GlobalPoolingResidualBlockDesc* desc);
-swift::Array<BlockDescriptor> residualBlocksToSwift(const vector<pair<int, unique_ptr_void>>& blocks);
+swift::Array<BlockDescriptorWrapper> residualBlocksToSwift(const vector<pair<int, unique_ptr_void>>& blocks);
 SWNestedBottleneckResidualBlockDesc nestedBottleneckResidualBlockDescToSwift(const NestedBottleneckResidualBlockDesc* desc);
 swift::Optional<SWSGFMetadataEncoderDesc> sGFMetadataEncoderDescToSwift(const SGFMetadataEncoderDesc * desc);
 SWTrunkDesc trunkDescToSwift(const TrunkDesc * trunk);

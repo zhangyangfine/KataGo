@@ -125,24 +125,24 @@ SWGlobalPoolingResidualBlockDesc MetalProcess::globalPoolingResidualBlockDescToS
 /// Convert residual blocks from C++ to Swift
 /// - Parameters:
 ///   - blocks: Residual blocks
-///   - swBlocks: A pointer to an array of BlockDescriptor
-swift::Array<BlockDescriptor> MetalProcess::residualBlocksToSwift(const vector<pair<int, unique_ptr_void>>& blocks) {
+///   - swBlocks: A pointer to an array of BlockDescriptorWrapper
+swift::Array<BlockDescriptorWrapper> MetalProcess::residualBlocksToSwift(const vector<pair<int, unique_ptr_void>>& blocks) {
 
   auto builder = createBlockDescriptorBuilder();
 
-  for (int i = 0; i < blocks.size(); i++) {
+  for (size_t i = 0; i < blocks.size(); i++) {
 
     void * blockDesc = blocks[i].second.get();
 
     if (blocks[i].first == GLOBAL_POOLING_BLOCK_KIND) {
-      BlockDescriptor descriptor = globalPoolingResidualBlockDescToSwift((GlobalPoolingResidualBlockDesc*)blockDesc);
-      builder.enque(descriptor);
+      auto descriptor = globalPoolingResidualBlockDescToSwift((GlobalPoolingResidualBlockDesc*)blockDesc);
+      builder.enqueueGlobalPoolingBlock(descriptor);
     } else if (blocks[i].first == NESTED_BOTTLENECK_BLOCK_KIND) {
-      BlockDescriptor descriptor = nestedBottleneckResidualBlockDescToSwift((NestedBottleneckResidualBlockDesc*)blockDesc);
-      builder.enque(descriptor);
+      auto descriptor = nestedBottleneckResidualBlockDescToSwift((NestedBottleneckResidualBlockDesc*)blockDesc);
+      builder.enqueueNestedBottleneckBlock(descriptor);
     } else {
-      BlockDescriptor descriptor = residualBlockDescToSwift((ResidualBlockDesc*)blockDesc);
-      builder.enque(descriptor);
+      auto descriptor = residualBlockDescToSwift((ResidualBlockDesc*)blockDesc);
+      builder.enqueueResidualBlock(descriptor);
     }
   }
 
@@ -186,7 +186,7 @@ swift::Optional<SWSGFMetadataEncoderDesc> MetalProcess::sGFMetadataEncoderDescTo
   ActivationKind act2 = activationLayerDescToSwift(&desc->act2);
   SWMatMulLayerDesc mul3 = matMulLayerDescToSwift(&desc->mul3);
 
-  auto swSGFMetadataEncoderDesc = createSWSGFMetadataEncoderDesc(desc->metaEncoderVersion,
+  SWSGFMetadataEncoderDesc swSGFMetadataEncoderDesc = createSWSGFMetadataEncoderDesc(desc->metaEncoderVersion,
                                                                  desc->numInputMetaChannels,
                                                                  mul1,
                                                                  bias1,
@@ -196,7 +196,7 @@ swift::Optional<SWSGFMetadataEncoderDesc> MetalProcess::sGFMetadataEncoderDescTo
                                                                  act2,
                                                                  mul3);
 
-  return swSGFMetadataEncoderDesc;
+  return wrapOptionalSGFMetadataEncoder(swSGFMetadataEncoderDesc);
 }
 
 /// Convert a trunk description from C++ to Swift
@@ -218,10 +218,10 @@ SWTrunkDesc MetalProcess::trunkDescToSwift(const TrunkDesc * trunk) {
                                               trunk->gpoolNumChannels,
                                               initialConv,
                                               initialMatMul,
-                                              sgfMetadataEncoder,
                                               swBlocks,
                                               trunkTipBN,
-                                              trunkTipActivation);
+                                              trunkTipActivation,
+                                              sgfMetadataEncoder);
 
   return swTrunkDesc;
 }

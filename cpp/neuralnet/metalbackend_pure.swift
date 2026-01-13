@@ -27,6 +27,13 @@ class MetalPipelineManager {
     // Residency set for resource management
     let residencySet: MTLResidencySet
 
+    // Metal 4 argument table for resource binding
+    let argumentTable: MTL4ArgumentTable
+
+    // Constants buffer for shader parameters (replaces setBytes)
+    let constantsBuffer: MTLBuffer
+    let constantsBufferSize = 64 * 1024  // 64KB to handle deep networks with many dispatch calls
+
     // Compute pipelines for each kernel
     var conv2dPipeline: MTLComputePipelineState!
     var conv2d1x1Pipeline: MTLComputePipelineState!
@@ -53,6 +60,10 @@ class MetalPipelineManager {
     var copyBufferPipeline: MTLComputePipelineState!
     var extractMaskPipeline: MTLComputePipelineState!
 
+    // Shared event for CPU-GPU synchronization
+    let sharedEvent: MTLSharedEvent
+    var eventValue: UInt64 = 0
+
     init(device: MTLDevice) throws {
         self.device = device
 
@@ -60,30 +71,39 @@ class MetalPipelineManager {
         guard let queue = device.makeMTL4CommandQueue() else {
             throw MetalError.commandBufferCreationFailed
         }
-        queue.label = "KataGo MTL4 Command Queue"
         self.mtl4CommandQueue = queue
 
         // Create Metal 4 command allocator for explicit memory management
         let allocatorDescriptor = MTL4CommandAllocatorDescriptor()
-        allocatorDescriptor.label = "KataGo Command Allocator"
-        guard let allocator = device.makeCommandAllocator(descriptor: allocatorDescriptor) else {
-            throw MetalError.commandBufferCreationFailed
-        }
-        self.commandAllocator = allocator
+        self.commandAllocator = try device.makeCommandAllocator(descriptor: allocatorDescriptor)
 
         // Create Metal 4 compiler for pipeline creation
         let compilerDescriptor = MTL4CompilerDescriptor()
-        compilerDescriptor.label = "KataGo MTL4 Compiler"
-        guard let compiler = device.makeCompiler(descriptor: compilerDescriptor) else {
+        self.mtl4Compiler = try device.makeCompiler(descriptor: compilerDescriptor)
+
+        // Create shared event for synchronization
+        guard let event = device.makeSharedEvent() else {
             throw MetalError.commandBufferCreationFailed
         }
-        self.mtl4Compiler = compiler
+        self.sharedEvent = event
 
         // Create residency set for efficient resource management
         let residencyDescriptor = MTLResidencySetDescriptor()
         residencyDescriptor.label = "KataGo Residency Set"
         residencyDescriptor.initialCapacity = 1024
         self.residencySet = try device.makeResidencySet(descriptor: residencyDescriptor)
+
+        // Create Metal 4 argument table for resource binding
+        let argTableDescriptor = MTL4ArgumentTableDescriptor()
+        argTableDescriptor.maxBufferBindCount = 32  // Up to 32 buffer bindings
+        self.argumentTable = try device.makeArgumentTable(descriptor: argTableDescriptor)
+
+        // Create constants buffer for shader parameters (replaces setBytes)
+        guard let constBuffer = device.makeBuffer(length: constantsBufferSize, options: .storageModeShared) else {
+            throw MetalError.bufferCreationFailed
+        }
+        constBuffer.label = "Constants Buffer"
+        self.constantsBuffer = constBuffer
 
         // Load the Metal library
         guard let libraryPath = Bundle.main.path(forResource: "metalbackend", ofType: "metallib"),
@@ -137,24 +157,27 @@ class MetalPipelineManager {
     }
 
     private func createOptimizedPipeline(_ name: String) throws -> MTLComputePipelineState {
-        guard let function = library.makeFunction(name: name) else {
-            throw MetalError.functionNotFound(name)
-        }
+        // Metal 4: Use function descriptors instead of MTLFunction directly
+        let functionDescriptor = MTL4LibraryFunctionDescriptor()
+        functionDescriptor.name = name
+        functionDescriptor.library = library
 
-        // Use MTL4Compiler for pipeline creation
-        let descriptor = MTLComputePipelineDescriptor()
-        descriptor.computeFunction = function
+        // Use MTL4Compiler for pipeline creation with MTL4 descriptor
+        let descriptor = MTL4ComputePipelineDescriptor()
+        descriptor.computeFunctionDescriptor = functionDescriptor
         descriptor.label = name
-        descriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth = true
-        descriptor.supportIndirectCommandBuffers = true
 
         return try mtl4Compiler.makeComputePipelineState(descriptor: descriptor)
     }
 
     /// Create a Metal 4 command buffer from device (not queue)
     func makeCommandBuffer() -> MTL4CommandBuffer? {
-        // Metal 4: Command buffers are created from device with explicit allocator
-        return device.makeCommandBuffer(allocator: commandAllocator)
+        // Metal 4: Command buffers are created from device, then linked to allocator
+        guard let commandBuffer = device.makeCommandBuffer() else {
+            return nil
+        }
+        commandBuffer.beginCommandBuffer(allocator: commandAllocator)
+        return commandBuffer
     }
 
     /// Add a buffer to the residency set
@@ -167,9 +190,16 @@ class MetalPipelineManager {
         residencySet.commit()
     }
 
-    /// Submit command buffer to Metal 4 queue
+    /// Submit command buffer to Metal 4 queue and signal event
     func submit(_ commandBuffer: MTL4CommandBuffer) {
-        mtl4CommandQueue.submit(commandBuffer)
+        eventValue += 1
+        mtl4CommandQueue.commit([commandBuffer])  // Metal 4: commit takes array of command buffers
+        mtl4CommandQueue.signalEvent(sharedEvent, value: eventValue)
+    }
+
+    /// Wait for all submitted commands to complete
+    func waitForCompletion() {
+        _ = sharedEvent.wait(untilSignaledValue: eventValue, timeoutMS: 10000)
     }
 }
 
@@ -254,7 +284,7 @@ class MetalBufferManager {
 
 // MARK: - Metal 4 Compute Dispatcher
 
-/// Dispatches compute kernels using MTL4ComputeCommandEncoder
+/// Dispatches compute kernels using MTL4ComputeCommandEncoder with argument tables
 /// MTL4ComputeCommandEncoder is a unified encoder that handles compute, blits, and acceleration structures
 class MetalComputeDispatcher {
     let pipelineManager: MetalPipelineManager
@@ -262,8 +292,45 @@ class MetalComputeDispatcher {
     // SIMD width for optimal dispatching (Metal 4 typically uses 32)
     let simdWidth: Int = 32
 
+    // Current offset into constants buffer for parameter storage
+    var constantsOffset: Int = 0
+
     init(pipelineManager: MetalPipelineManager) {
         self.pipelineManager = pipelineManager
+    }
+
+    /// Reset constants buffer offset at start of each command buffer
+    func resetConstantsOffset() {
+        constantsOffset = 0
+    }
+
+    /// Write Int32 constant to buffer and return its GPU address
+    private func writeConstant(_ value: Int32) -> UInt64 {
+        // Bounds check - should never overflow with 64KB buffer
+        guard constantsOffset + 4 <= pipelineManager.constantsBufferSize else {
+            fatalError("Constants buffer overflow at offset \(constantsOffset)")
+        }
+        let ptr = pipelineManager.constantsBuffer.contents().advanced(by: constantsOffset)
+        ptr.storeBytes(of: value, as: Int32.self)
+        let address = pipelineManager.constantsBuffer.gpuAddress + UInt64(constantsOffset)
+        constantsOffset += 4
+        return address
+    }
+
+    /// Configure argument table with buffer bindings
+    private func configureArgumentTable(buffers: [(MTLBuffer, Int)], constants: [(Int32, Int)]) {
+        let argTable = pipelineManager.argumentTable
+
+        // Bind data buffers
+        for (buffer, index) in buffers {
+            argTable.setAddress(buffer.gpuAddress, index: index)
+        }
+
+        // Bind constants (written to constants buffer)
+        for (value, index) in constants {
+            let address = writeConstant(value)
+            argTable.setAddress(address, index: index)
+        }
     }
 
     /// Calculate optimal threadgroup size for Metal 4 SIMD execution
@@ -310,44 +377,43 @@ class MetalComputeDispatcher {
         }
 
         encoder.setComputePipelineState(pipeline)
-        encoder.setBuffer(input, offset: 0, index: 0)
-        encoder.setBuffer(weights, offset: 0, index: 1)
-        encoder.setBuffer(output, offset: 0, index: 2)
 
-        var bs = Int32(batchSize)
-        var ic = Int32(inChannels)
-        var oc = Int32(outChannels)
-        var h = Int32(height)
-        var w = Int32(width)
-        var kh = Int32(kernelH)
-        var kw = Int32(kernelW)
-        var dh = Int32(dilationH)
-        var dw = Int32(dilationW)
+        // Configure argument table with buffers and constants
+        var buffers: [(MTLBuffer, Int)] = [
+            (input, 0),
+            (weights, 1),
+            (output, 2)
+        ]
 
-        encoder.setBytes(&bs, length: 4, index: 3)
-        encoder.setBytes(&ic, length: 4, index: 4)
-        encoder.setBytes(&oc, length: 4, index: 5)
-        encoder.setBytes(&h, length: 4, index: 6)
-        encoder.setBytes(&w, length: 4, index: 7)
+        var constants: [(Int32, Int)] = [
+            (Int32(batchSize), 3),
+            (Int32(inChannels), 4),
+            (Int32(outChannels), 5),
+            (Int32(height), 6),
+            (Int32(width), 7)
+        ]
 
-        // Set kernel-specific parameters based on which pipeline is used
+        // Add kernel-specific parameters
         if kernelH == 1 && kernelW == 1 {
-            // 1x1 conv: no additional params (indices 0-7 only)
+            // 1x1 conv: no additional params
         } else if kernelH == 3 && kernelW == 3 {
-            // 3x3 tiled conv: dilation at indices 8-9 (no kernel size needed)
-            encoder.setBytes(&dh, length: 4, index: 8)
-            encoder.setBytes(&dw, length: 4, index: 9)
+            // 3x3 tiled conv: dilation at indices 8-9
+            constants.append((Int32(dilationH), 8))
+            constants.append((Int32(dilationW), 9))
         } else {
             // General conv: kernel size at 8-9, dilation at 10-11
-            encoder.setBytes(&kh, length: 4, index: 8)
-            encoder.setBytes(&kw, length: 4, index: 9)
-            encoder.setBytes(&dh, length: 4, index: 10)
-            encoder.setBytes(&dw, length: 4, index: 11)
+            constants.append((Int32(kernelH), 8))
+            constants.append((Int32(kernelW), 9))
+            constants.append((Int32(dilationH), 10))
+            constants.append((Int32(dilationW), 11))
         }
+
+        configureArgumentTable(buffers: buffers, constants: constants)
+        encoder.setArgumentTable(pipelineManager.argumentTable)
 
         let threadsPerGrid = MTLSize(width: width, height: height, depth: batchSize * outChannels)
         let threadsPerGroup = optimalThreadgroupSize(for: pipeline, workSize: threadsPerGrid)
-        encoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
+        encoder.dispatchThreads(threadsPerGrid: threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
     }
 
     func dispatchBatchNorm(
@@ -374,25 +440,27 @@ class MetalComputeDispatcher {
         }
 
         encoder.setComputePipelineState(pipeline)
-        encoder.setBuffer(input, offset: 0, index: 0)
-        encoder.setBuffer(scale, offset: 0, index: 1)
-        encoder.setBuffer(bias, offset: 0, index: 2)
-        encoder.setBuffer(mask, offset: 0, index: 3)
-        encoder.setBuffer(output, offset: 0, index: 4)
 
-        var bs = Int32(batchSize)
-        var c = Int32(channels)
-        var h = Int32(height)
-        var w = Int32(width)
-
-        encoder.setBytes(&bs, length: 4, index: 5)
-        encoder.setBytes(&c, length: 4, index: 6)
-        encoder.setBytes(&h, length: 4, index: 7)
-        encoder.setBytes(&w, length: 4, index: 8)
+        configureArgumentTable(
+            buffers: [
+                (input, 0),
+                (scale, 1),
+                (bias, 2),
+                (mask, 3),
+                (output, 4)
+            ],
+            constants: [
+                (Int32(batchSize), 5),
+                (Int32(channels), 6),
+                (Int32(height), 7),
+                (Int32(width), 8)
+            ]
+        )
+        encoder.setArgumentTable(pipelineManager.argumentTable)
 
         let threadsPerGrid = MTLSize(width: width, height: height, depth: batchSize * channels)
         let threadsPerGroup = optimalThreadgroupSize(for: pipeline, workSize: threadsPerGrid)
-        encoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
+        encoder.dispatchThreads(threadsPerGrid: threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
     }
 
     func dispatchActivation(
@@ -414,16 +482,16 @@ class MetalComputeDispatcher {
         }
 
         encoder.setComputePipelineState(pipeline)
-        encoder.setBuffer(input, offset: 0, index: 0)
-        encoder.setBuffer(output, offset: 0, index: 1)
 
-        var s = Int32(size)
-        encoder.setBytes(&s, length: 4, index: 2)
+        configureArgumentTable(
+            buffers: [(input, 0), (output, 1)],
+            constants: [(Int32(size), 2)]
+        )
+        encoder.setArgumentTable(pipelineManager.argumentTable)
 
-        // Use SIMD-aligned threadgroup size for Metal 4
         let threadsPerGrid = MTLSize(width: size, height: 1, depth: 1)
-        let threadsPerGroup = MTLSize(width: min(simdWidth * 8, size), height: 1, depth: 1)  // 256 threads
-        encoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
+        let threadsPerGroup = MTLSize(width: min(simdWidth * 8, size), height: 1, depth: 1)
+        encoder.dispatchThreads(threadsPerGrid: threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
     }
 
     func dispatchMatMul(
@@ -436,21 +504,16 @@ class MetalComputeDispatcher {
         N: Int
     ) {
         encoder.setComputePipelineState(pipelineManager.matmulPipeline)
-        encoder.setBuffer(A, offset: 0, index: 0)
-        encoder.setBuffer(B, offset: 0, index: 1)
-        encoder.setBuffer(C, offset: 0, index: 2)
 
-        var m = Int32(M)
-        var k = Int32(K)
-        var n = Int32(N)
-
-        encoder.setBytes(&m, length: 4, index: 3)
-        encoder.setBytes(&k, length: 4, index: 4)
-        encoder.setBytes(&n, length: 4, index: 5)
+        configureArgumentTable(
+            buffers: [(A, 0), (B, 1), (C, 2)],
+            constants: [(Int32(M), 3), (Int32(K), 4), (Int32(N), 5)]
+        )
+        encoder.setArgumentTable(pipelineManager.argumentTable)
 
         let threadsPerGrid = MTLSize(width: N, height: M, depth: 1)
         let threadsPerGroup = optimalThreadgroupSize(for: pipelineManager.matmulPipeline, workSize: threadsPerGrid)
-        encoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
+        encoder.dispatchThreads(threadsPerGrid: threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
     }
 
     func dispatchAddNCBias(
@@ -464,23 +527,21 @@ class MetalComputeDispatcher {
         width: Int
     ) {
         encoder.setComputePipelineState(pipelineManager.addNCBiasPipeline)
-        encoder.setBuffer(input, offset: 0, index: 0)
-        encoder.setBuffer(bias, offset: 0, index: 1)
-        encoder.setBuffer(output, offset: 0, index: 2)
 
-        var bs = Int32(batchSize)
-        var c = Int32(channels)
-        var h = Int32(height)
-        var w = Int32(width)
-
-        encoder.setBytes(&bs, length: 4, index: 3)
-        encoder.setBytes(&c, length: 4, index: 4)
-        encoder.setBytes(&h, length: 4, index: 5)
-        encoder.setBytes(&w, length: 4, index: 6)
+        configureArgumentTable(
+            buffers: [(input, 0), (bias, 1), (output, 2)],
+            constants: [
+                (Int32(batchSize), 3),
+                (Int32(channels), 4),
+                (Int32(height), 5),
+                (Int32(width), 6)
+            ]
+        )
+        encoder.setArgumentTable(pipelineManager.argumentTable)
 
         let threadsPerGrid = MTLSize(width: width, height: height, depth: batchSize * channels)
         let threadsPerGroup = optimalThreadgroupSize(for: pipelineManager.addNCBiasPipeline, workSize: threadsPerGrid)
-        encoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
+        encoder.dispatchThreads(threadsPerGrid: threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
     }
 
     func dispatchElementwiseAdd(
@@ -491,16 +552,16 @@ class MetalComputeDispatcher {
         size: Int
     ) {
         encoder.setComputePipelineState(pipelineManager.elementwiseAddPipeline)
-        encoder.setBuffer(a, offset: 0, index: 0)
-        encoder.setBuffer(b, offset: 0, index: 1)
-        encoder.setBuffer(output, offset: 0, index: 2)
 
-        var s = Int32(size)
-        encoder.setBytes(&s, length: 4, index: 3)
+        configureArgumentTable(
+            buffers: [(a, 0), (b, 1), (output, 2)],
+            constants: [(Int32(size), 3)]
+        )
+        encoder.setArgumentTable(pipelineManager.argumentTable)
 
         let threadsPerGrid = MTLSize(width: size, height: 1, depth: 1)
         let threadsPerGroup = MTLSize(width: min(simdWidth * 8, size), height: 1, depth: 1)
-        encoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
+        encoder.dispatchThreads(threadsPerGrid: threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
     }
 
     func dispatchMatBiasAdd(
@@ -512,19 +573,16 @@ class MetalComputeDispatcher {
         channels: Int
     ) {
         encoder.setComputePipelineState(pipelineManager.matBiasAddPipeline)
-        encoder.setBuffer(input, offset: 0, index: 0)
-        encoder.setBuffer(bias, offset: 0, index: 1)
-        encoder.setBuffer(output, offset: 0, index: 2)
 
-        var bs = Int32(batchSize)
-        var c = Int32(channels)
-
-        encoder.setBytes(&bs, length: 4, index: 3)
-        encoder.setBytes(&c, length: 4, index: 4)
+        configureArgumentTable(
+            buffers: [(input, 0), (bias, 1), (output, 2)],
+            constants: [(Int32(batchSize), 3), (Int32(channels), 4)]
+        )
+        encoder.setArgumentTable(pipelineManager.argumentTable)
 
         let threadsPerGrid = MTLSize(width: channels, height: batchSize, depth: 1)
         let threadsPerGroup = MTLSize(width: min(simdWidth * 8, channels), height: 1, depth: 1)
-        encoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
+        encoder.dispatchThreads(threadsPerGrid: threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
     }
 
     func dispatchGlobalPooling(
@@ -540,21 +598,23 @@ class MetalComputeDispatcher {
         width: Int
     ) {
         encoder.setComputePipelineState(pipelineManager.globalPoolingPipeline)
-        encoder.setBuffer(input, offset: 0, index: 0)
-        encoder.setBuffer(mask, offset: 0, index: 1)
-        encoder.setBuffer(maskSum, offset: 0, index: 2)
-        encoder.setBuffer(maskSumSqrtS14M01, offset: 0, index: 3)
-        encoder.setBuffer(output, offset: 0, index: 4)
 
-        var bs = Int32(batchSize)
-        var c = Int32(channels)
-        var h = Int32(height)
-        var w = Int32(width)
-
-        encoder.setBytes(&bs, length: 4, index: 5)
-        encoder.setBytes(&c, length: 4, index: 6)
-        encoder.setBytes(&h, length: 4, index: 7)
-        encoder.setBytes(&w, length: 4, index: 8)
+        configureArgumentTable(
+            buffers: [
+                (input, 0),
+                (mask, 1),
+                (maskSum, 2),
+                (maskSumSqrtS14M01, 3),
+                (output, 4)
+            ],
+            constants: [
+                (Int32(batchSize), 5),
+                (Int32(channels), 6),
+                (Int32(height), 7),
+                (Int32(width), 8)
+            ]
+        )
+        encoder.setArgumentTable(pipelineManager.argumentTable)
 
         // Use SIMD-aligned threadgroup size for efficient reductions
         let threadgroupSize = simdWidth * 8  // 256 threads
@@ -563,7 +623,7 @@ class MetalComputeDispatcher {
 
         let threadsPerGrid = MTLSize(width: threadgroupSize, height: batchSize * channels, depth: 1)
         let threadsPerGroup = MTLSize(width: threadgroupSize, height: 1, depth: 1)
-        encoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
+        encoder.dispatchThreads(threadsPerGrid: threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
     }
 
     func dispatchGlobalPoolingValue(
@@ -579,28 +639,30 @@ class MetalComputeDispatcher {
         width: Int
     ) {
         encoder.setComputePipelineState(pipelineManager.globalPoolingValuePipeline)
-        encoder.setBuffer(input, offset: 0, index: 0)
-        encoder.setBuffer(maskSum, offset: 0, index: 1)
-        encoder.setBuffer(maskSumSqrtS14M01, offset: 0, index: 2)
-        encoder.setBuffer(maskSumSqrtS14M01SquareS01, offset: 0, index: 3)
-        encoder.setBuffer(output, offset: 0, index: 4)
 
-        var bs = Int32(batchSize)
-        var c = Int32(channels)
-        var h = Int32(height)
-        var w = Int32(width)
-
-        encoder.setBytes(&bs, length: 4, index: 5)
-        encoder.setBytes(&c, length: 4, index: 6)
-        encoder.setBytes(&h, length: 4, index: 7)
-        encoder.setBytes(&w, length: 4, index: 8)
+        configureArgumentTable(
+            buffers: [
+                (input, 0),
+                (maskSum, 1),
+                (maskSumSqrtS14M01, 2),
+                (maskSumSqrtS14M01SquareS01, 3),
+                (output, 4)
+            ],
+            constants: [
+                (Int32(batchSize), 5),
+                (Int32(channels), 6),
+                (Int32(height), 7),
+                (Int32(width), 8)
+            ]
+        )
+        encoder.setArgumentTable(pipelineManager.argumentTable)
 
         let threadgroupSize = simdWidth * 8
         encoder.setThreadgroupMemoryLength(threadgroupSize * 4, index: 0)
 
         let threadsPerGrid = MTLSize(width: threadgroupSize, height: batchSize * channels, depth: 1)
         let threadsPerGroup = MTLSize(width: threadgroupSize, height: 1, depth: 1)
-        encoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
+        encoder.dispatchThreads(threadsPerGrid: threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
     }
 
     func dispatchMaskSum(
@@ -612,21 +674,21 @@ class MetalComputeDispatcher {
         width: Int
     ) {
         encoder.setComputePipelineState(pipelineManager.maskSumPipeline)
-        encoder.setBuffer(mask, offset: 0, index: 0)
-        encoder.setBuffer(maskSum, offset: 0, index: 1)
 
-        var bs = Int32(batchSize)
-        var h = Int32(height)
-        var w = Int32(width)
-
-        encoder.setBytes(&bs, length: 4, index: 2)
-        encoder.setBytes(&h, length: 4, index: 3)
-        encoder.setBytes(&w, length: 4, index: 4)
+        configureArgumentTable(
+            buffers: [(mask, 0), (maskSum, 1)],
+            constants: [
+                (Int32(batchSize), 2),
+                (Int32(height), 3),
+                (Int32(width), 4)
+            ]
+        )
+        encoder.setArgumentTable(pipelineManager.argumentTable)
 
         let threadgroupSize = simdWidth * 8
         encoder.setThreadgroupMemoryLength(threadgroupSize * 4, index: 0)
 
-        encoder.dispatchThreadgroups(MTLSize(width: batchSize, height: 1, depth: 1),
+        encoder.dispatchThreadgroups(threadgroupsPerGrid: MTLSize(width: batchSize, height: 1, depth: 1),
                                      threadsPerThreadgroup: MTLSize(width: threadgroupSize, height: 1, depth: 1))
     }
 
@@ -637,15 +699,16 @@ class MetalComputeDispatcher {
         batchSize: Int
     ) {
         encoder.setComputePipelineState(pipelineManager.maskSumSqrtS14M01Pipeline)
-        encoder.setBuffer(maskSum, offset: 0, index: 0)
-        encoder.setBuffer(output, offset: 0, index: 1)
 
-        var bs = Int32(batchSize)
-        encoder.setBytes(&bs, length: 4, index: 2)
+        configureArgumentTable(
+            buffers: [(maskSum, 0), (output, 1)],
+            constants: [(Int32(batchSize), 2)]
+        )
+        encoder.setArgumentTable(pipelineManager.argumentTable)
 
         let threadsPerGrid = MTLSize(width: batchSize, height: 1, depth: 1)
         let threadsPerGroup = MTLSize(width: min(simdWidth * 8, batchSize), height: 1, depth: 1)
-        encoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
+        encoder.dispatchThreads(threadsPerGrid: threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
     }
 
     func dispatchMaskSumSqrtS14M01SquareS01(
@@ -655,15 +718,16 @@ class MetalComputeDispatcher {
         batchSize: Int
     ) {
         encoder.setComputePipelineState(pipelineManager.maskSumSqrtS14M01SquareS01Pipeline)
-        encoder.setBuffer(maskSumSqrtS14M01, offset: 0, index: 0)
-        encoder.setBuffer(output, offset: 0, index: 1)
 
-        var bs = Int32(batchSize)
-        encoder.setBytes(&bs, length: 4, index: 2)
+        configureArgumentTable(
+            buffers: [(maskSumSqrtS14M01, 0), (output, 1)],
+            constants: [(Int32(batchSize), 2)]
+        )
+        encoder.setArgumentTable(pipelineManager.argumentTable)
 
         let threadsPerGrid = MTLSize(width: batchSize, height: 1, depth: 1)
         let threadsPerGroup = MTLSize(width: min(simdWidth * 8, batchSize), height: 1, depth: 1)
-        encoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
+        encoder.dispatchThreads(threadsPerGrid: threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
     }
 
     func dispatchExtractMask(
@@ -675,19 +739,19 @@ class MetalComputeDispatcher {
         hw: Int
     ) {
         encoder.setComputePipelineState(pipelineManager.extractMaskPipeline)
-        encoder.setBuffer(input, offset: 0, index: 0)
-        encoder.setBuffer(mask, offset: 0, index: 1)
 
-        var bs = Int32(batchSize)
-        var c = Int32(channels)
-        var hwVal = Int32(hw)
-
-        encoder.setBytes(&bs, length: 4, index: 2)
-        encoder.setBytes(&c, length: 4, index: 3)
-        encoder.setBytes(&hwVal, length: 4, index: 4)
+        configureArgumentTable(
+            buffers: [(input, 0), (mask, 1)],
+            constants: [
+                (Int32(batchSize), 2),
+                (Int32(channels), 3),
+                (Int32(hw), 4)
+            ]
+        )
+        encoder.setArgumentTable(pipelineManager.argumentTable)
 
         let threadsPerGrid = MTLSize(width: hw, height: batchSize, depth: 1)
         let threadsPerGroup = optimalThreadgroupSize(for: pipelineManager.extractMaskPipeline, workSize: threadsPerGrid)
-        encoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
+        encoder.dispatchThreads(threadsPerGrid: threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
     }
 }

@@ -171,6 +171,86 @@ public func createSWMatBiasLayerDesc(
 /// Protocol for block descriptors
 public protocol BlockDescriptor {}
 
+/// Enum to identify block types for C++ interop
+public enum BlockDescriptorKind: Int32 {
+    case residual = 0
+    case globalPooling = 1
+    case nestedBottleneck = 2
+}
+
+/// Wrapper class for block descriptors - enables C++ interop
+/// Swift protocols can't be exported to C++, so we use this wrapper class instead
+public class BlockDescriptorWrapper {
+    public let kind: BlockDescriptorKind
+    public private(set) var residualBlock: SWResidualBlockDesc?
+    public private(set) var globalPoolingBlock: SWGlobalPoolingResidualBlockDesc?
+    public private(set) var nestedBottleneckBlock: SWNestedBottleneckResidualBlockDesc?
+
+    public init(residualBlock: SWResidualBlockDesc) {
+        self.kind = .residual
+        self.residualBlock = residualBlock
+    }
+
+    public init(globalPoolingBlock: SWGlobalPoolingResidualBlockDesc) {
+        self.kind = .globalPooling
+        self.globalPoolingBlock = globalPoolingBlock
+    }
+
+    public init(nestedBottleneckBlock: SWNestedBottleneckResidualBlockDesc) {
+        self.kind = .nestedBottleneck
+        self.nestedBottleneckBlock = nestedBottleneckBlock
+    }
+}
+
+/// Builder class for block descriptor arrays - enables C++ interop
+public class BlockDescriptorBuilder {
+    private var wrappers: [BlockDescriptorWrapper] = []
+
+    public init() {}
+
+    public func enqueue(_ wrapper: BlockDescriptorWrapper) {
+        wrappers.append(wrapper)
+    }
+
+    public func enqueueResidualBlock(_ block: SWResidualBlockDesc) {
+        wrappers.append(BlockDescriptorWrapper(residualBlock: block))
+    }
+
+    public func enqueueGlobalPoolingBlock(_ block: SWGlobalPoolingResidualBlockDesc) {
+        wrappers.append(BlockDescriptorWrapper(globalPoolingBlock: block))
+    }
+
+    public func enqueueNestedBottleneckBlock(_ block: SWNestedBottleneckResidualBlockDesc) {
+        wrappers.append(BlockDescriptorWrapper(nestedBottleneckBlock: block))
+    }
+
+    public func getBlockDescriptors() -> [BlockDescriptorWrapper] {
+        return wrappers
+    }
+
+    public func getBlockDescriptorsAsProtocol() -> [BlockDescriptor] {
+        return wrappers.compactMap { wrapper -> BlockDescriptor? in
+            switch wrapper.kind {
+            case .residual:
+                return wrapper.residualBlock
+            case .globalPooling:
+                return wrapper.globalPoolingBlock
+            case .nestedBottleneck:
+                return wrapper.nestedBottleneckBlock
+            }
+        }
+    }
+
+    public var count: Int {
+        return wrappers.count
+    }
+}
+
+/// Factory function to create BlockDescriptorBuilder for C++ interop
+public func createBlockDescriptorBuilder() -> BlockDescriptorBuilder {
+    return BlockDescriptorBuilder()
+}
+
 /// A struct that describes a residual block in a neural network.
 public struct SWResidualBlockDesc: BlockDescriptor {
     let preBN: SWBatchNormLayerDesc
@@ -282,7 +362,7 @@ public struct SWNestedBottleneckResidualBlockDesc: BlockDescriptor {
     let preBN: SWBatchNormLayerDesc
     let preActivation: ActivationKind
     let preConv: SWConvLayerDesc
-    let blockDescriptors: [BlockDescriptor]
+    let blockDescriptors: [BlockDescriptorWrapper]
     let postBN: SWBatchNormLayerDesc
     let postActivation: ActivationKind
     let postConv: SWConvLayerDesc
@@ -291,7 +371,7 @@ public struct SWNestedBottleneckResidualBlockDesc: BlockDescriptor {
         preBN: SWBatchNormLayerDesc,
         preActivation: ActivationKind,
         preConv: SWConvLayerDesc,
-        blockDescriptors: [BlockDescriptor],
+        blockDescriptors: [BlockDescriptorWrapper],
         postBN: SWBatchNormLayerDesc,
         postActivation: ActivationKind,
         postConv: SWConvLayerDesc
@@ -310,7 +390,7 @@ public func createSWNestedBottleneckResidualBlockDesc(
     preBN: SWBatchNormLayerDesc,
     preActivation: ActivationKind,
     preConv: SWConvLayerDesc,
-    blockDescriptors: [BlockDescriptor],
+    blockDescriptors: [BlockDescriptorWrapper],
     postBN: SWBatchNormLayerDesc,
     postActivation: ActivationKind,
     postConv: SWConvLayerDesc
@@ -385,6 +465,11 @@ public func createSWSGFMetadataEncoderDesc(
         mul3: mul3)
 }
 
+/// Wrap a non-optional SWSGFMetadataEncoderDesc into an optional for C++ interop
+public func wrapOptionalSGFMetadataEncoder(_ encoder: SWSGFMetadataEncoderDesc) -> SWSGFMetadataEncoderDesc? {
+    return encoder
+}
+
 // MARK: - Trunk Descriptor
 
 /// A struct that describes the trunk of a neural network.
@@ -396,7 +481,7 @@ public struct SWTrunkDesc {
     let gpoolNumChannels: NSNumber
     let initialConv: SWConvLayerDesc
     let initialMatMul: SWMatMulLayerDesc
-    let blockDescriptors: [BlockDescriptor]
+    let blockDescriptors: [BlockDescriptorWrapper]
     let trunkTipBN: SWBatchNormLayerDesc
     let trunkTipActivation: ActivationKind
     let sgfMetadataEncoder: SWSGFMetadataEncoderDesc?
@@ -409,7 +494,7 @@ public struct SWTrunkDesc {
         gpoolNumChannels: NSNumber,
         initialConv: SWConvLayerDesc,
         initialMatMul: SWMatMulLayerDesc,
-        blockDescriptors: [BlockDescriptor],
+        blockDescriptors: [BlockDescriptorWrapper],
         trunkTipBN: SWBatchNormLayerDesc,
         trunkTipActivation: ActivationKind,
         sgfMetadataEncoder: SWSGFMetadataEncoderDesc?
@@ -436,7 +521,7 @@ public func createSWTrunkDesc(
     gpoolNumChannels: Int32,
     initialConv: SWConvLayerDesc,
     initialMatMul: SWMatMulLayerDesc,
-    blockDescriptors: [BlockDescriptor],
+    blockDescriptors: [BlockDescriptorWrapper],
     trunkTipBN: SWBatchNormLayerDesc,
     trunkTipActivation: ActivationKind,
     sgfMetadataEncoder: SWSGFMetadataEncoderDesc?
@@ -819,7 +904,9 @@ public func testConvLayer(
     input: UnsafeMutablePointer<Float32>,
     output: UnsafeMutablePointer<Float32>
 ) {
-    guard let device = MTLCreateSystemDefaultDevice() else { return }
+    guard let device = MTLCreateSystemDefaultDevice() else {
+        return
+    }
 
     do {
         let pipelineManager = try MetalPipelineManager(device: device)
@@ -837,9 +924,28 @@ public func testConvLayer(
 
         guard let inputBuffer = device.makeBuffer(bytes: input, length: inputSize, options: .storageModeShared),
               let weightBuffer = device.makeBuffer(bytes: descriptor.weights, length: weightSize, options: .storageModeShared),
-              let outputBuffer = device.makeBuffer(length: outputSize, options: .storageModeShared),
-              let commandBuffer = pipelineManager.commandQueue.makeCommandBuffer(),
-              let encoder = commandBuffer.makeComputeCommandEncoder() else {
+              let outputBuffer = device.makeBuffer(length: outputSize, options: .storageModeShared) else {
+            printError("testConvLayer: Failed to create buffers")
+            return
+        }
+
+        // Add buffers to residency set and commit BEFORE creating command buffer (required for Metal 4)
+        pipelineManager.addToResidencySet(inputBuffer)
+        pipelineManager.addToResidencySet(weightBuffer)
+        pipelineManager.addToResidencySet(outputBuffer)
+        pipelineManager.addToResidencySet(pipelineManager.constantsBuffer)
+        pipelineManager.commitResidency()
+
+        guard let commandBuffer = pipelineManager.makeCommandBuffer() else {
+            printError("testConvLayer: Failed to create command buffer")
+            return
+        }
+
+        // Reset constants offset for this command buffer
+        dispatcher.resetConstantsOffset()
+
+        guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
+            printError("testConvLayer: Failed to create encoder")
             return
         }
 
@@ -859,8 +965,8 @@ public func testConvLayer(
             dilationW: descriptor.dilationX)
 
         encoder.endEncoding()
-        commandBuffer.commit()
-        commandBuffer.waitUntilCompleted()
+        pipelineManager.submit(commandBuffer)
+        pipelineManager.waitForCompletion()
 
         memcpy(output, outputBuffer.contents(), outputSize)
     } catch {
@@ -897,10 +1003,22 @@ public func testBatchNormLayer(
               let scaleBuffer = device.makeBuffer(bytes: descriptor.mergedScale, length: scaleSize, options: .storageModeShared),
               let biasBuffer = device.makeBuffer(bytes: descriptor.mergedBias, length: scaleSize, options: .storageModeShared),
               let outputBuffer = device.makeBuffer(length: inputSize, options: .storageModeShared),
-              let commandBuffer = pipelineManager.commandQueue.makeCommandBuffer(),
+              let commandBuffer = pipelineManager.makeCommandBuffer(),
               let encoder = commandBuffer.makeComputeCommandEncoder() else {
             return
         }
+
+        // Add buffers to residency set and commit (required for Metal 4)
+        pipelineManager.addToResidencySet(inputBuffer)
+        pipelineManager.addToResidencySet(maskBuffer)
+        pipelineManager.addToResidencySet(scaleBuffer)
+        pipelineManager.addToResidencySet(biasBuffer)
+        pipelineManager.addToResidencySet(outputBuffer)
+        pipelineManager.addToResidencySet(pipelineManager.constantsBuffer)
+        pipelineManager.commitResidency()
+
+        // Reset constants offset for this command buffer
+        dispatcher.resetConstantsOffset()
 
         dispatcher.dispatchBatchNorm(
             encoder: encoder,
@@ -916,11 +1034,37 @@ public func testBatchNormLayer(
             activation: .identity)
 
         encoder.endEncoding()
-        commandBuffer.commit()
-        commandBuffer.waitUntilCompleted()
+        pipelineManager.submit(commandBuffer)
+        pipelineManager.waitForCompletion()
 
         memcpy(output, outputBuffer.contents(), inputSize)
     } catch {
         printError("Test batch norm layer failed: \(error)")
     }
+}
+
+public func testResidualBlock(
+    descriptor: SWResidualBlockDesc,
+    batchSize: Int32,
+    nnXLen: Int32,
+    nnYLen: Int32,
+    input: UnsafeMutablePointer<Float32>,
+    mask: UnsafeMutablePointer<Float32>,
+    output: UnsafeMutablePointer<Float32>
+) {
+    // TODO: Implement residual block test with Metal 4
+    printError("testResidualBlock not yet implemented for Metal 4")
+}
+
+public func testGlobalPoolingResidualBlock(
+    descriptor: SWGlobalPoolingResidualBlockDesc,
+    batchSize: Int32,
+    nnXLen: Int32,
+    nnYLen: Int32,
+    input: UnsafeMutablePointer<Float32>,
+    mask: UnsafeMutablePointer<Float32>,
+    output: UnsafeMutablePointer<Float32>
+) {
+    // TODO: Implement global pooling residual block test with Metal 4
+    printError("testGlobalPoolingResidualBlock not yet implemented for Metal 4")
 }

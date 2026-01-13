@@ -485,7 +485,7 @@ inline float simd_reduce_max(float val, uint simd_lane_id, uint simd_size) {
 }
 
 // Compute sum over HW dimensions for each (B, C) pair
-// Uses Metal 4 SIMD group operations for fast reduction
+// Uses threadgroup reduction for Metal 3.1 compatibility
 kernel void reduction_sum_hw(
     device const float* input [[buffer(0)]],
     device float* output [[buffer(1)]],
@@ -495,11 +495,8 @@ kernel void reduction_sum_hw(
     constant int& width [[buffer(5)]],
     threadgroup float* sharedData [[threadgroup(0)]],
     uint2 gid [[thread_position_in_grid]],
-    uint tid [[thread_index_in_threadgroup]],
-    uint tgSize [[threads_per_threadgroup]],
-    uint simd_lane_id [[thread_index_in_simdgroup]],
-    uint simd_group_id [[simdgroup_index_in_threadgroup]],
-    uint simd_size [[threads_per_simdgroup]])
+    uint2 tid [[thread_position_in_threadgroup]],
+    uint2 tgSize [[threads_per_threadgroup]])
 {
     int b = gid.y / channels;
     int c = gid.y % channels;
@@ -511,37 +508,28 @@ kernel void reduction_sum_hw(
 
     // Each thread sums multiple elements
     float sum = 0.0f;
-    for (int i = tid; i < hw; i += tgSize) {
+    for (uint i = tid.x; i < uint(hw); i += tgSize.x) {
         sum += input[baseIdx + i];
     }
 
-    // Metal 4: SIMD group reduction (fast warp-level reduction)
-    sum = simd_reduce_add(sum, simd_lane_id, simd_size);
-
-    // Store SIMD group results to shared memory
-    if (simd_lane_id == 0) {
-        sharedData[simd_group_id] = sum;
-    }
+    sharedData[tid.x] = sum;
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
-    // Final reduction across SIMD groups
-    uint numSimdGroups = (tgSize + simd_size - 1) / simd_size;
-    if (tid < numSimdGroups) {
-        sum = sharedData[tid];
-    } else {
-        sum = 0.0f;
+    // Parallel reduction in threadgroup
+    for (uint stride = tgSize.x / 2; stride > 0; stride >>= 1) {
+        if (tid.x < stride) {
+            sharedData[tid.x] += sharedData[tid.x + stride];
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
     }
 
-    if (tid < simd_size) {
-        sum = simd_reduce_add(sum, simd_lane_id, simd_size);
-        if (tid == 0) {
-            output[b * channels + c] = sum;
-        }
+    if (tid.x == 0) {
+        output[b * channels + c] = sharedData[0];
     }
 }
 
 // Compute max over HW dimensions for each (B, C) pair
-// Uses Metal 4 SIMD group operations for fast reduction
+// Uses threadgroup reduction for Metal 3.1 compatibility
 // Applies mask by subtracting 1 from mask and adding to input
 kernel void reduction_max_hw_masked(
     device const float* input [[buffer(0)]],
@@ -553,11 +541,8 @@ kernel void reduction_max_hw_masked(
     constant int& width [[buffer(6)]],
     threadgroup float* sharedData [[threadgroup(0)]],
     uint2 gid [[thread_position_in_grid]],
-    uint tid [[thread_index_in_threadgroup]],
-    uint tgSize [[threads_per_threadgroup]],
-    uint simd_lane_id [[thread_index_in_simdgroup]],
-    uint simd_group_id [[simdgroup_index_in_threadgroup]],
-    uint simd_size [[threads_per_simdgroup]])
+    uint2 tid [[thread_position_in_threadgroup]],
+    uint2 tgSize [[threads_per_threadgroup]])
 {
     int b = gid.y / channels;
     int c = gid.y % channels;
@@ -570,34 +555,25 @@ kernel void reduction_max_hw_masked(
 
     // Each thread finds max of multiple elements
     float maxVal = -INFINITY;
-    for (int i = tid; i < hw; i += tgSize) {
+    for (uint i = tid.x; i < uint(hw); i += tgSize.x) {
         float m = mask[maskBaseIdx + i];
         float val = input[baseIdx + i] + (m - 1.0f);  // Mask invalid positions
         maxVal = max(maxVal, val);
     }
 
-    // Metal 4: SIMD group reduction (fast warp-level reduction)
-    maxVal = simd_reduce_max(maxVal, simd_lane_id, simd_size);
-
-    // Store SIMD group results to shared memory
-    if (simd_lane_id == 0) {
-        sharedData[simd_group_id] = maxVal;
-    }
+    sharedData[tid.x] = maxVal;
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
-    // Final reduction across SIMD groups
-    uint numSimdGroups = (tgSize + simd_size - 1) / simd_size;
-    if (tid < numSimdGroups) {
-        maxVal = sharedData[tid];
-    } else {
-        maxVal = -INFINITY;
+    // Parallel reduction in threadgroup
+    for (uint stride = tgSize.x / 2; stride > 0; stride >>= 1) {
+        if (tid.x < stride) {
+            sharedData[tid.x] = max(sharedData[tid.x], sharedData[tid.x + stride]);
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
     }
 
-    if (tid < simd_size) {
-        maxVal = simd_reduce_max(maxVal, simd_lane_id, simd_size);
-        if (tid == 0) {
-            output[b * channels + c] = maxVal;
-        }
+    if (tid.x == 0) {
+        output[b * channels + c] = sharedData[0];
     }
 }
 
@@ -681,8 +657,8 @@ kernel void global_pooling(
     threadgroup float* sharedSum [[threadgroup(0)]],
     threadgroup float* sharedMax [[threadgroup(1)]],
     uint2 gid [[thread_position_in_grid]],
-    uint tid [[thread_index_in_threadgroup]],
-    uint tgSize [[threads_per_threadgroup]])
+    uint2 tid [[thread_position_in_threadgroup]],
+    uint2 tgSize [[threads_per_threadgroup]])
 {
     int b = gid.y / channels;
     int c = gid.y % channels;
@@ -697,27 +673,27 @@ kernel void global_pooling(
     float sum = 0.0f;
     float maxVal = -INFINITY;
 
-    for (int i = tid; i < hw; i += tgSize) {
+    for (uint i = tid.x; i < uint(hw); i += tgSize.x) {
         float val = input[baseIdx + i];
         float m = mask[maskBaseIdx + i];
         sum += val;
         maxVal = max(maxVal, val + (m - 1.0f));
     }
 
-    sharedSum[tid] = sum;
-    sharedMax[tid] = maxVal;
+    sharedSum[tid.x] = sum;
+    sharedMax[tid.x] = maxVal;
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
     // Parallel reduction
-    for (uint stride = tgSize / 2; stride > 0; stride >>= 1) {
-        if (tid < stride) {
-            sharedSum[tid] += sharedSum[tid + stride];
-            sharedMax[tid] = max(sharedMax[tid], sharedMax[tid + stride]);
+    for (uint stride = tgSize.x / 2; stride > 0; stride >>= 1) {
+        if (tid.x < stride) {
+            sharedSum[tid.x] += sharedSum[tid.x + stride];
+            sharedMax[tid.x] = max(sharedMax[tid.x], sharedMax[tid.x + stride]);
         }
         threadgroup_barrier(mem_flags::mem_threadgroup);
     }
 
-    if (tid == 0) {
+    if (tid.x == 0) {
         float mean = sharedSum[0] / maskSum[b];
         float meanMask = mean * maskSumSqrtS14M01[b];
         int outBase = b * channels * 3 + c;
@@ -740,8 +716,8 @@ kernel void global_pooling_value(
     constant int& width [[buffer(8)]],
     threadgroup float* sharedSum [[threadgroup(0)]],
     uint2 gid [[thread_position_in_grid]],
-    uint tid [[thread_index_in_threadgroup]],
-    uint tgSize [[threads_per_threadgroup]])
+    uint2 tid [[thread_position_in_threadgroup]],
+    uint2 tgSize [[threads_per_threadgroup]])
 {
     int b = gid.y / channels;
     int c = gid.y % channels;
@@ -752,21 +728,21 @@ kernel void global_pooling_value(
     int baseIdx = b * channels * hw + c * hw;
 
     float sum = 0.0f;
-    for (int i = tid; i < hw; i += tgSize) {
+    for (uint i = tid.x; i < uint(hw); i += tgSize.x) {
         sum += input[baseIdx + i];
     }
 
-    sharedSum[tid] = sum;
+    sharedSum[tid.x] = sum;
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
-    for (uint stride = tgSize / 2; stride > 0; stride >>= 1) {
-        if (tid < stride) {
-            sharedSum[tid] += sharedSum[tid + stride];
+    for (uint stride = tgSize.x / 2; stride > 0; stride >>= 1) {
+        if (tid.x < stride) {
+            sharedSum[tid.x] += sharedSum[tid.x + stride];
         }
         threadgroup_barrier(mem_flags::mem_threadgroup);
     }
 
-    if (tid == 0) {
+    if (tid.x == 0) {
         float mean = sharedSum[0] / maskSum[b];
         float meanMask = mean * maskSumSqrtS14M01[b];
         float meanMaskSquare = mean * maskSumSqrtS14M01SquareS01[b];

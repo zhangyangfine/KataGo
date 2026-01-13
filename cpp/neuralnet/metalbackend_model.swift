@@ -171,15 +171,18 @@ class PureMetalModel {
         convWeights["value.vOwnershipConv"] = try loadConvWeights(value.vOwnershipConv, name: "value.vOwnershipConv")
     }
 
-    private func loadBlockWeights(_ block: BlockDescriptor, index: Int) throws {
+    private func loadBlockWeights(_ wrapper: BlockDescriptorWrapper, index: Int) throws {
         let prefix = "trunk.block\(index)"
 
-        if let resBlock = block as? SWResidualBlockDesc {
+        switch wrapper.kind {
+        case .residual:
+            guard let resBlock = wrapper.residualBlock else { return }
             bnWeights["\(prefix).preBN"] = try loadBNWeights(resBlock.preBN, name: "\(prefix).preBN")
             convWeights["\(prefix).regularConv"] = try loadConvWeights(resBlock.regularConv, name: "\(prefix).regularConv")
             bnWeights["\(prefix).midBN"] = try loadBNWeights(resBlock.midBN, name: "\(prefix).midBN")
             convWeights["\(prefix).finalConv"] = try loadConvWeights(resBlock.finalConv, name: "\(prefix).finalConv")
-        } else if let gpoolBlock = block as? SWGlobalPoolingResidualBlockDesc {
+        case .globalPooling:
+            guard let gpoolBlock = wrapper.globalPoolingBlock else { return }
             bnWeights["\(prefix).preBN"] = try loadBNWeights(gpoolBlock.preBN, name: "\(prefix).preBN")
             convWeights["\(prefix).regularConv"] = try loadConvWeights(gpoolBlock.regularConv, name: "\(prefix).regularConv")
             convWeights["\(prefix).gpoolConv"] = try loadConvWeights(gpoolBlock.gpoolConv, name: "\(prefix).gpoolConv")
@@ -187,11 +190,12 @@ class PureMetalModel {
             matmulWeights["\(prefix).gpoolToBiasMul"] = try loadMatMulWeights(gpoolBlock.gpoolToBiasMul, name: "\(prefix).gpoolToBiasMul")
             bnWeights["\(prefix).midBN"] = try loadBNWeights(gpoolBlock.midBN, name: "\(prefix).midBN")
             convWeights["\(prefix).finalConv"] = try loadConvWeights(gpoolBlock.finalConv, name: "\(prefix).finalConv")
-        } else if let nestedBlock = block as? SWNestedBottleneckResidualBlockDesc {
+        case .nestedBottleneck:
+            guard let nestedBlock = wrapper.nestedBottleneckBlock else { return }
             bnWeights["\(prefix).preBN"] = try loadBNWeights(nestedBlock.preBN, name: "\(prefix).preBN")
             convWeights["\(prefix).preConv"] = try loadConvWeights(nestedBlock.preConv, name: "\(prefix).preConv")
-            for (j, innerBlock) in nestedBlock.blockDescriptors.enumerated() {
-                try loadBlockWeights(innerBlock, index: index * 100 + j)
+            for (j, innerWrapper) in nestedBlock.blockDescriptors.enumerated() {
+                try loadBlockWeights(innerWrapper, index: index * 100 + j)
             }
             bnWeights["\(prefix).postBN"] = try loadBNWeights(nestedBlock.postBN, name: "\(prefix).postBN")
             convWeights["\(prefix).postConv"] = try loadConvWeights(nestedBlock.postConv, name: "\(prefix).postConv")
@@ -336,6 +340,9 @@ class PureMetalModel {
         }
         commandBuffer.label = "KataGo Neural Network"
 
+        // Reset constants buffer offset for new command buffer
+        dispatcher.resetConstantsOffset()
+
         let hw = nnXLen * nnYLen
         let inputChannels = descriptor.numInputChannels.intValue
         let globalChannels = descriptor.numInputGlobalChannels.intValue
@@ -388,7 +395,7 @@ class PureMetalModel {
 
         // Metal 4: Submit command buffer to MTL4CommandQueue and wait
         pipelineManager.submit(commandBuffer)
-        commandBuffer.waitUntilCompleted()
+        pipelineManager.waitForCompletion()
 
         // Copy outputs
         if let policyBuf = policyBuffer {
@@ -476,11 +483,19 @@ class PureMetalModel {
         // Process residual blocks
         var nextBuffer = intermediateBuffers["trunk1"]!
 
-        for (i, block) in trunk.blockDescriptors.enumerated() {
-            if let resBlock = block as? SWResidualBlockDesc {
-                runResidualBlock(encoder: encoder, block: resBlock, index: i, input: currentBuffer, output: nextBuffer, batchSize: batchSize)
-            } else if let gpoolBlock = block as? SWGlobalPoolingResidualBlockDesc {
-                runGlobalPoolingResidualBlock(encoder: encoder, block: gpoolBlock, index: i, input: currentBuffer, output: nextBuffer, batchSize: batchSize)
+        for (i, wrapper) in trunk.blockDescriptors.enumerated() {
+            switch wrapper.kind {
+            case .residual:
+                if let resBlock = wrapper.residualBlock {
+                    runResidualBlock(encoder: encoder, block: resBlock, index: i, input: currentBuffer, output: nextBuffer, batchSize: batchSize)
+                }
+            case .globalPooling:
+                if let gpoolBlock = wrapper.globalPoolingBlock {
+                    runGlobalPoolingResidualBlock(encoder: encoder, block: gpoolBlock, index: i, input: currentBuffer, output: nextBuffer, batchSize: batchSize)
+                }
+            case .nestedBottleneck:
+                // TODO: Support nested bottleneck blocks in inference
+                break
             }
             swap(&currentBuffer, &nextBuffer)
         }
