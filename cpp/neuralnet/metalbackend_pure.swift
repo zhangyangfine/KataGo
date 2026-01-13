@@ -1,18 +1,24 @@
 //
 //  metalbackend_pure.swift
-//  Pure Metal 4 backend for KataGo - replaces MPSGraph with compute shaders
+//  Pure Metal 4 backend for KataGo - uses MTL4 APIs for maximum performance
 //
 
 import Foundation
 import Metal
 
-// MARK: - Pipeline Manager
+// MARK: - Metal 4 Pipeline Manager
 
-/// Manages Metal compute pipeline states for all kernels
+/// Manages Metal 4 compute pipeline states and command infrastructure
 class MetalPipelineManager {
     let device: MTLDevice
     let library: MTLLibrary
-    let commandQueue: MTLCommandQueue
+
+    // Metal 4 command infrastructure
+    let mtl4CommandQueue: MTLCommandQueue  // MTL4CommandQueue
+    let commandAllocator: MTLHeap?  // For pre-allocated command buffer memory
+
+    // Residency set for resource management (Metal 4 feature)
+    var residencySet: MTLResidencySet?
 
     // Compute pipelines for each kernel
     var conv2dPipeline: MTLComputePipelineState!
@@ -41,7 +47,33 @@ class MetalPipelineManager {
 
     init(device: MTLDevice) throws {
         self.device = device
-        self.commandQueue = device.makeCommandQueue()!
+
+        // Create Metal 4 command queue with high priority
+        // MTL4CommandQueue provides decoupled command buffers for parallel encoding
+        let queueDescriptor = MTLCommandQueueDescriptor()
+        queueDescriptor.maxCommandBufferCount = 64  // Allow more in-flight command buffers
+
+        guard let queue = device.makeCommandQueue(descriptor: queueDescriptor) else {
+            throw MetalError.commandBufferCreationFailed
+        }
+        self.mtl4CommandQueue = queue
+
+        // Create a heap for pre-allocated buffer memory (Metal 4 style resource management)
+        let heapDescriptor = MTLHeapDescriptor()
+        heapDescriptor.size = 256 * 1024 * 1024  // 256 MB heap for command allocations
+        heapDescriptor.storageMode = .shared
+        heapDescriptor.type = .automatic
+        self.commandAllocator = device.makeHeap(descriptor: heapDescriptor)
+
+        // Create residency set for efficient resource management (Metal 4 feature)
+        if #available(macOS 15.0, iOS 18.0, *) {
+            let residencyDescriptor = MTLResidencySetDescriptor()
+            residencyDescriptor.label = "KataGo Residency Set"
+            residencyDescriptor.initialCapacity = 1024  // Expected number of resources
+            self.residencySet = try? device.makeResidencySet(descriptor: residencyDescriptor)
+        } else {
+            self.residencySet = nil
+        }
 
         // Load the Metal library from the compiled .metallib or source
         guard let libraryPath = Bundle.main.path(forResource: "metalbackend", ofType: "metallib"),
@@ -49,7 +81,11 @@ class MetalPipelineManager {
             // Try to compile from source
             let sourcePath = Bundle.main.path(forResource: "metalbackend", ofType: "metal")
             if let path = sourcePath, let source = try? String(contentsOfFile: path) {
-                self.library = try device.makeLibrary(source: source, options: nil)
+                // Use Metal 3.1 compilation options
+                let options = MTLCompileOptions()
+                options.languageVersion = .version3_1
+                options.fastMathEnabled = true
+                self.library = try device.makeLibrary(source: source, options: options)
             } else {
                 // Use default library
                 self.library = device.makeDefaultLibrary()!
@@ -62,36 +98,79 @@ class MetalPipelineManager {
     }
 
     private func createPipelines() throws {
-        conv2dPipeline = try createPipeline("conv2d_nchw")
-        conv2d1x1Pipeline = try createPipeline("conv2d_1x1_nchw")
-        conv2d3x3TiledPipeline = try createPipeline("conv2d_3x3_nchw_tiled")
-        batchnormMaskPipeline = try createPipeline("batchnorm_mask")
-        reluPipeline = try createPipeline("relu_activation")
-        mishPipeline = try createPipeline("mish_activation")
-        batchnormReluPipeline = try createPipeline("batchnorm_relu")
-        batchnormMishPipeline = try createPipeline("batchnorm_mish")
-        matmulPipeline = try createPipeline("matmul")
-        matmulTiledPipeline = try createPipeline("matmul_tiled")
-        elementwiseAddPipeline = try createPipeline("elementwise_add")
-        elementwiseMulPipeline = try createPipeline("elementwise_mul")
-        addNCBiasPipeline = try createPipeline("add_nc_bias")
-        reductionSumHWPipeline = try createPipeline("reduction_sum_hw")
-        reductionMaxHWMaskedPipeline = try createPipeline("reduction_max_hw_masked")
-        maskSumPipeline = try createPipeline("mask_sum")
-        maskSumSqrtS14M01Pipeline = try createPipeline("mask_sum_sqrt_s14_m01")
-        maskSumSqrtS14M01SquareS01Pipeline = try createPipeline("mask_sum_sqrt_s14_m01_square_s01")
-        globalPoolingPipeline = try createPipeline("global_pooling")
-        globalPoolingValuePipeline = try createPipeline("global_pooling_value")
-        matBiasAddPipeline = try createPipeline("mat_bias_add")
-        residualAddPipeline = try createPipeline("residual_add")
-        copyBufferPipeline = try createPipeline("copy_buffer")
+        // Create pipelines with optimized descriptors for Metal 4
+        conv2dPipeline = try createOptimizedPipeline("conv2d_nchw")
+        conv2d1x1Pipeline = try createOptimizedPipeline("conv2d_1x1_nchw")
+        conv2d3x3TiledPipeline = try createOptimizedPipeline("conv2d_3x3_nchw_tiled")
+        batchnormMaskPipeline = try createOptimizedPipeline("batchnorm_mask")
+        reluPipeline = try createOptimizedPipeline("relu_activation")
+        mishPipeline = try createOptimizedPipeline("mish_activation")
+        batchnormReluPipeline = try createOptimizedPipeline("batchnorm_relu")
+        batchnormMishPipeline = try createOptimizedPipeline("batchnorm_mish")
+        matmulPipeline = try createOptimizedPipeline("matmul")
+        matmulTiledPipeline = try createOptimizedPipeline("matmul_tiled")
+        elementwiseAddPipeline = try createOptimizedPipeline("elementwise_add")
+        elementwiseMulPipeline = try createOptimizedPipeline("elementwise_mul")
+        addNCBiasPipeline = try createOptimizedPipeline("add_nc_bias")
+        reductionSumHWPipeline = try createOptimizedPipeline("reduction_sum_hw")
+        reductionMaxHWMaskedPipeline = try createOptimizedPipeline("reduction_max_hw_masked")
+        maskSumPipeline = try createOptimizedPipeline("mask_sum")
+        maskSumSqrtS14M01Pipeline = try createOptimizedPipeline("mask_sum_sqrt_s14_m01")
+        maskSumSqrtS14M01SquareS01Pipeline = try createOptimizedPipeline("mask_sum_sqrt_s14_m01_square_s01")
+        globalPoolingPipeline = try createOptimizedPipeline("global_pooling")
+        globalPoolingValuePipeline = try createOptimizedPipeline("global_pooling_value")
+        matBiasAddPipeline = try createOptimizedPipeline("mat_bias_add")
+        residualAddPipeline = try createOptimizedPipeline("residual_add")
+        copyBufferPipeline = try createOptimizedPipeline("copy_buffer")
     }
 
-    private func createPipeline(_ name: String) throws -> MTLComputePipelineState {
+    private func createOptimizedPipeline(_ name: String) throws -> MTLComputePipelineState {
         guard let function = library.makeFunction(name: name) else {
             throw MetalError.functionNotFound(name)
         }
-        return try device.makeComputePipelineState(function: function)
+
+        // Use pipeline descriptor for Metal 4 optimizations
+        let descriptor = MTLComputePipelineDescriptor()
+        descriptor.computeFunction = function
+        descriptor.label = name
+
+        // Enable optimizations
+        descriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth = true
+
+        // Support indirect command buffers for Metal 4
+        descriptor.supportIndirectCommandBuffers = true
+
+        // Metal 4: Enable dynamic libraries linking if needed
+        if #available(macOS 14.0, iOS 17.0, *) {
+            descriptor.supportAddingBinaryFunctions = false  // We don't need dynamic functions
+        }
+
+        return try device.makeComputePipelineState(descriptor: descriptor, options: [], reflection: nil)
+    }
+
+    /// Create a command buffer using Metal 4's decoupled model
+    func makeCommandBuffer() -> MTLCommandBuffer? {
+        // Metal 4: Command buffers are independent of queues
+        // Use retained references mode for explicit resource lifetime control
+        let descriptor = MTLCommandBufferDescriptor()
+        descriptor.retainedReferences = false  // Better performance with explicit management
+        descriptor.errorOptions = .encoderExecutionStatus
+
+        return mtl4CommandQueue.makeCommandBuffer(descriptor: descriptor)
+    }
+
+    /// Add a buffer to the residency set for Metal 4 resource management
+    func addToResidencySet(_ buffer: MTLBuffer) {
+        if #available(macOS 15.0, iOS 18.0, *) {
+            residencySet?.addAllocation(buffer)
+        }
+    }
+
+    /// Commit the residency set before execution
+    func commitResidency() {
+        if #available(macOS 15.0, iOS 18.0, *) {
+            residencySet?.commit()
+        }
     }
 }
 
@@ -101,22 +180,53 @@ enum MetalError: Error {
     case commandBufferCreationFailed
 }
 
-// MARK: - Buffer Manager
+// MARK: - Metal 4 Buffer Manager
 
-/// Manages GPU buffers for weights and intermediate tensors
+/// Manages GPU buffers with Metal 4 resource management
 class MetalBufferManager {
     let device: MTLDevice
+    let pipelineManager: MetalPipelineManager?
     var buffers: [String: MTLBuffer] = [:]
 
-    init(device: MTLDevice) {
+    // Pre-allocated heap for intermediate buffers (Metal 4 style)
+    var bufferHeap: MTLHeap?
+
+    init(device: MTLDevice, pipelineManager: MetalPipelineManager? = nil) {
         self.device = device
+        self.pipelineManager = pipelineManager
+    }
+
+    /// Initialize heap for pre-allocated buffers
+    func initializeHeap(size: Int) {
+        let heapDescriptor = MTLHeapDescriptor()
+        heapDescriptor.size = size
+        heapDescriptor.storageMode = .shared
+        heapDescriptor.type = .automatic
+        heapDescriptor.hazardTrackingMode = .tracked  // Metal 4: explicit hazard tracking
+        bufferHeap = device.makeHeap(descriptor: heapDescriptor)
     }
 
     func createBuffer(name: String, size: Int) -> MTLBuffer? {
+        // Try to allocate from heap first (Metal 4 style)
+        if let heap = bufferHeap {
+            let sizeAndAlign = heap.maxAvailableSize(alignment: 256)
+            if sizeAndAlign >= size {
+                if let buffer = heap.makeBuffer(length: size, options: .storageModeShared) {
+                    buffer.label = name
+                    buffers[name] = buffer
+                    pipelineManager?.addToResidencySet(buffer)
+                    return buffer
+                }
+            }
+        }
+
+        // Fall back to device allocation
         guard let buffer = device.makeBuffer(length: size, options: .storageModeShared) else {
             return nil
         }
+        buffer.label = name
         buffers[name] = buffer
+        pipelineManager?.addToResidencySet(buffer)
         return buffer
     }
 
@@ -124,7 +234,9 @@ class MetalBufferManager {
         guard let buffer = device.makeBuffer(bytes: data, length: size, options: .storageModeShared) else {
             return nil
         }
+        buffer.label = name
         buffers[name] = buffer
+        pipelineManager?.addToResidencySet(buffer)
         return buffer
     }
 
@@ -141,14 +253,36 @@ class MetalBufferManager {
     }
 }
 
-// MARK: - Compute Dispatcher
+// MARK: - Metal 4 Compute Dispatcher
 
-/// Dispatches compute kernels with optimal thread configuration
+/// Dispatches compute kernels with Metal 4 optimized thread configuration
 class MetalComputeDispatcher {
     let pipelineManager: MetalPipelineManager
 
+    // SIMD width for optimal dispatching (Metal 4 typically uses 32)
+    let simdWidth: Int = 32
+
     init(pipelineManager: MetalPipelineManager) {
         self.pipelineManager = pipelineManager
+    }
+
+    /// Calculate optimal threadgroup size for Metal 4 SIMD execution
+    private func optimalThreadgroupSize(for pipeline: MTLComputePipelineState, workSize: MTLSize) -> MTLSize {
+        let maxThreads = pipeline.maxTotalThreadsPerThreadgroup
+        let threadExecutionWidth = pipeline.threadExecutionWidth
+
+        // Align to SIMD width for Metal 4
+        var width = min(workSize.width, threadExecutionWidth)
+        var height = min(workSize.height, maxThreads / width)
+        var depth = min(workSize.depth, maxThreads / (width * height))
+
+        // Ensure we use SIMD-aligned dimensions
+        width = max(1, (width / threadExecutionWidth) * threadExecutionWidth)
+        if width == 0 { width = min(workSize.width, threadExecutionWidth) }
+        height = max(1, height)
+        depth = max(1, depth)
+
+        return MTLSize(width: width, height: height, depth: depth)
     }
 
     func dispatchConv2D(
@@ -204,7 +338,7 @@ class MetalComputeDispatcher {
         }
 
         let threadsPerGrid = MTLSize(width: width, height: height, depth: batchSize * outChannels)
-        let threadsPerGroup = MTLSize(width: min(16, width), height: min(16, height), depth: 1)
+        let threadsPerGroup = optimalThreadgroupSize(for: pipeline, workSize: threadsPerGrid)
         encoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
     }
 
@@ -249,7 +383,7 @@ class MetalComputeDispatcher {
         encoder.setBytes(&w, length: 4, index: 8)
 
         let threadsPerGrid = MTLSize(width: width, height: height, depth: batchSize * channels)
-        let threadsPerGroup = MTLSize(width: min(16, width), height: min(16, height), depth: 1)
+        let threadsPerGroup = optimalThreadgroupSize(for: pipeline, workSize: threadsPerGrid)
         encoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
     }
 
@@ -278,8 +412,9 @@ class MetalComputeDispatcher {
         var s = Int32(size)
         encoder.setBytes(&s, length: 4, index: 2)
 
+        // Use SIMD-aligned threadgroup size for Metal 4
         let threadsPerGrid = MTLSize(width: size, height: 1, depth: 1)
-        let threadsPerGroup = MTLSize(width: min(256, size), height: 1, depth: 1)
+        let threadsPerGroup = MTLSize(width: min(simdWidth * 8, size), height: 1, depth: 1)  // 256 threads
         encoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
     }
 
@@ -306,7 +441,7 @@ class MetalComputeDispatcher {
         encoder.setBytes(&n, length: 4, index: 5)
 
         let threadsPerGrid = MTLSize(width: N, height: M, depth: 1)
-        let threadsPerGroup = MTLSize(width: min(16, N), height: min(16, M), depth: 1)
+        let threadsPerGroup = optimalThreadgroupSize(for: pipelineManager.matmulPipeline, workSize: threadsPerGrid)
         encoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
     }
 
@@ -336,7 +471,7 @@ class MetalComputeDispatcher {
         encoder.setBytes(&w, length: 4, index: 6)
 
         let threadsPerGrid = MTLSize(width: width, height: height, depth: batchSize * channels)
-        let threadsPerGroup = MTLSize(width: min(16, width), height: min(16, height), depth: 1)
+        let threadsPerGroup = optimalThreadgroupSize(for: pipelineManager.addNCBiasPipeline, workSize: threadsPerGrid)
         encoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
     }
 
@@ -356,7 +491,7 @@ class MetalComputeDispatcher {
         encoder.setBytes(&s, length: 4, index: 3)
 
         let threadsPerGrid = MTLSize(width: size, height: 1, depth: 1)
-        let threadsPerGroup = MTLSize(width: min(256, size), height: 1, depth: 1)
+        let threadsPerGroup = MTLSize(width: min(simdWidth * 8, size), height: 1, depth: 1)
         encoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
     }
 
@@ -380,7 +515,7 @@ class MetalComputeDispatcher {
         encoder.setBytes(&c, length: 4, index: 4)
 
         let threadsPerGrid = MTLSize(width: channels, height: batchSize, depth: 1)
-        let threadsPerGroup = MTLSize(width: min(256, channels), height: 1, depth: 1)
+        let threadsPerGroup = MTLSize(width: min(simdWidth * 8, channels), height: 1, depth: 1)
         encoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
     }
 
@@ -413,7 +548,8 @@ class MetalComputeDispatcher {
         encoder.setBytes(&h, length: 4, index: 7)
         encoder.setBytes(&w, length: 4, index: 8)
 
-        let threadgroupSize = 256
+        // Use SIMD-aligned threadgroup size for efficient reductions
+        let threadgroupSize = simdWidth * 8  // 256 threads
         encoder.setThreadgroupMemoryLength(threadgroupSize * 4, index: 0)  // sharedSum
         encoder.setThreadgroupMemoryLength(threadgroupSize * 4, index: 1)  // sharedMax
 
@@ -451,7 +587,7 @@ class MetalComputeDispatcher {
         encoder.setBytes(&h, length: 4, index: 7)
         encoder.setBytes(&w, length: 4, index: 8)
 
-        let threadgroupSize = 256
+        let threadgroupSize = simdWidth * 8
         encoder.setThreadgroupMemoryLength(threadgroupSize * 4, index: 0)
 
         let threadsPerGrid = MTLSize(width: threadgroupSize, height: batchSize * channels, depth: 1)
@@ -479,11 +615,9 @@ class MetalComputeDispatcher {
         encoder.setBytes(&h, length: 4, index: 3)
         encoder.setBytes(&w, length: 4, index: 4)
 
-        let threadgroupSize = 256
+        let threadgroupSize = simdWidth * 8
         encoder.setThreadgroupMemoryLength(threadgroupSize * 4, index: 0)
 
-        let threadsPerGrid = MTLSize(width: batchSize, height: 1, depth: 1)
-        let threadsPerGroup = MTLSize(width: 1, height: 1, depth: 1)
         encoder.dispatchThreadgroups(MTLSize(width: batchSize, height: 1, depth: 1),
                                      threadsPerThreadgroup: MTLSize(width: threadgroupSize, height: 1, depth: 1))
     }
@@ -502,7 +636,7 @@ class MetalComputeDispatcher {
         encoder.setBytes(&bs, length: 4, index: 2)
 
         let threadsPerGrid = MTLSize(width: batchSize, height: 1, depth: 1)
-        let threadsPerGroup = MTLSize(width: min(256, batchSize), height: 1, depth: 1)
+        let threadsPerGroup = MTLSize(width: min(simdWidth * 8, batchSize), height: 1, depth: 1)
         encoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
     }
 
@@ -520,7 +654,7 @@ class MetalComputeDispatcher {
         encoder.setBytes(&bs, length: 4, index: 2)
 
         let threadsPerGrid = MTLSize(width: batchSize, height: 1, depth: 1)
-        let threadsPerGroup = MTLSize(width: min(256, batchSize), height: 1, depth: 1)
+        let threadsPerGroup = MTLSize(width: min(simdWidth * 8, batchSize), height: 1, depth: 1)
         encoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
     }
 }

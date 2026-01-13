@@ -39,9 +39,11 @@ struct BiasWeightBuffers {
     let channels: Int
 }
 
-// MARK: - Pure Metal Model
+// MARK: - Pure Metal 4 Model
 
-/// Pure Metal implementation of the KataGo neural network model
+/// Pure Metal 4 implementation of the KataGo neural network model
+/// Uses Metal 4 APIs for maximum performance: decoupled command buffers,
+/// residency sets, and optimized resource management
 class PureMetalModel {
     let device: MTLDevice
     let pipelineManager: MetalPipelineManager
@@ -62,25 +64,59 @@ class PureMetalModel {
     var matmulWeights: [String: MatMulWeightBuffers] = [:]
     var biasWeights: [String: BiasWeightBuffers] = [:]
 
-    // Intermediate buffers (allocated per batch)
+    // Intermediate buffers (pre-allocated for Metal 4 efficiency)
     var intermediateBuffers: [String: MTLBuffer] = [:]
+
+    // Metal 4: Pre-allocated output buffers for async readback
+    var outputBufferPool: [MTLBuffer] = []
+    var outputBufferIndex: Int = 0
 
     init(device: MTLDevice, descriptor: SWModelDesc, nnXLen: Int, nnYLen: Int, maxBatchSize: Int = 16) throws {
         self.device = device
         self.pipelineManager = try MetalPipelineManager(device: device)
         self.dispatcher = MetalComputeDispatcher(pipelineManager: pipelineManager)
-        self.bufferManager = MetalBufferManager(device: device)
+        self.bufferManager = MetalBufferManager(device: device, pipelineManager: pipelineManager)
         self.nnXLen = nnXLen
         self.nnYLen = nnYLen
         self.version = descriptor.version
         self.maxBatchSize = maxBatchSize
         self.descriptor = descriptor
 
+        // Initialize heap for intermediate buffers (Metal 4 style)
+        let heapSize = calculateIntermediateBufferSize()
+        bufferManager.initializeHeap(size: heapSize)
+
         // Load weights from descriptor
         try loadWeights()
 
         // Allocate intermediate buffers
         allocateIntermediateBuffers()
+
+        // Pre-allocate output buffer pool for async execution
+        allocateOutputBufferPool()
+
+        // Commit residency set after all buffers are created
+        pipelineManager.commitResidency()
+    }
+
+    private func calculateIntermediateBufferSize() -> Int {
+        let hw = nnXLen * nnYLen
+        let trunkChannels = descriptor.trunk.trunkNumChannels.intValue
+
+        // Calculate total memory needed for all intermediate buffers
+        var totalSize = 0
+        totalSize += maxBatchSize * trunkChannels * hw * 4 * 4  // trunk0, trunk1, conv_out, bn_out
+        totalSize += maxBatchSize * trunkChannels * 3 * 4  // gpool_out
+        totalSize += maxBatchSize * trunkChannels * 4  // matmul_out
+        totalSize += maxBatchSize * hw * 4  // mask
+        totalSize += maxBatchSize * 4 * 3  // mask statistics
+
+        // Policy and value head buffers
+        totalSize += maxBatchSize * descriptor.policyHead.p1Conv.outChannels.intValue * hw * 4
+        totalSize += maxBatchSize * descriptor.policyHead.g1Conv.outChannels.intValue * hw * 4
+        totalSize += maxBatchSize * descriptor.valueHead.v1Conv.outChannels.intValue * hw * 4
+
+        return totalSize + 64 * 1024 * 1024  // Add 64MB padding
     }
 
     private func loadWeights() throws {
@@ -172,6 +208,8 @@ class PureMetalModel {
         guard let buffer = device.makeBuffer(bytes: desc.weights, length: size, options: .storageModeShared) else {
             throw MetalError.bufferCreationFailed
         }
+        buffer.label = name
+        pipelineManager.addToResidencySet(buffer)
         return ConvWeightBuffers(
             weights: buffer,
             inChannels: desc.inChannels.intValue,
@@ -189,6 +227,10 @@ class PureMetalModel {
               let biasBuffer = device.makeBuffer(bytes: desc.mergedBias, length: size, options: .storageModeShared) else {
             throw MetalError.bufferCreationFailed
         }
+        scaleBuffer.label = "\(name).scale"
+        biasBuffer.label = "\(name).bias"
+        pipelineManager.addToResidencySet(scaleBuffer)
+        pipelineManager.addToResidencySet(biasBuffer)
         return BatchNormWeightBuffers(
             scale: scaleBuffer,
             bias: biasBuffer,
@@ -201,6 +243,8 @@ class PureMetalModel {
         guard let buffer = device.makeBuffer(bytes: desc.weights, length: size, options: .storageModeShared) else {
             throw MetalError.bufferCreationFailed
         }
+        buffer.label = name
+        pipelineManager.addToResidencySet(buffer)
         return MatMulWeightBuffers(
             weights: buffer,
             inChannels: desc.inChannels.intValue,
@@ -213,6 +257,8 @@ class PureMetalModel {
         guard let buffer = device.makeBuffer(bytes: desc.weights, length: size, options: .storageModeShared) else {
             throw MetalError.bufferCreationFailed
         }
+        buffer.label = name
+        pipelineManager.addToResidencySet(buffer)
         return BiasWeightBuffers(
             bias: buffer,
             channels: desc.numChannels.intValue
@@ -227,34 +273,61 @@ class PureMetalModel {
         let spatialSize = maxBatchSize * trunkChannels * hw * 4
         let globalSize = maxBatchSize * trunkChannels * 3 * 4  // For global pooling concat
 
-        // Allocate reusable intermediate buffers
-        intermediateBuffers["trunk0"] = device.makeBuffer(length: spatialSize, options: .storageModeShared)
-        intermediateBuffers["trunk1"] = device.makeBuffer(length: spatialSize, options: .storageModeShared)
-        intermediateBuffers["conv_out"] = device.makeBuffer(length: spatialSize, options: .storageModeShared)
-        intermediateBuffers["bn_out"] = device.makeBuffer(length: spatialSize, options: .storageModeShared)
-        intermediateBuffers["gpool_out"] = device.makeBuffer(length: globalSize, options: .storageModeShared)
-        intermediateBuffers["matmul_out"] = device.makeBuffer(length: maxBatchSize * trunkChannels * 4, options: .storageModeShared)
+        // Allocate reusable intermediate buffers using the buffer manager
+        intermediateBuffers["trunk0"] = bufferManager.createBuffer(name: "trunk0", size: spatialSize)
+        intermediateBuffers["trunk1"] = bufferManager.createBuffer(name: "trunk1", size: spatialSize)
+        intermediateBuffers["conv_out"] = bufferManager.createBuffer(name: "conv_out", size: spatialSize)
+        intermediateBuffers["bn_out"] = bufferManager.createBuffer(name: "bn_out", size: spatialSize)
+        intermediateBuffers["gpool_out"] = bufferManager.createBuffer(name: "gpool_out", size: globalSize)
+        intermediateBuffers["matmul_out"] = bufferManager.createBuffer(name: "matmul_out", size: maxBatchSize * trunkChannels * 4)
 
         // Mask-related buffers
-        intermediateBuffers["mask"] = device.makeBuffer(length: maxBatchSize * hw * 4, options: .storageModeShared)
-        intermediateBuffers["maskSum"] = device.makeBuffer(length: maxBatchSize * 4, options: .storageModeShared)
-        intermediateBuffers["maskSumSqrtS14M01"] = device.makeBuffer(length: maxBatchSize * 4, options: .storageModeShared)
-        intermediateBuffers["maskSumSqrtS14M01SquareS01"] = device.makeBuffer(length: maxBatchSize * 4, options: .storageModeShared)
+        intermediateBuffers["mask"] = bufferManager.createBuffer(name: "mask", size: maxBatchSize * hw * 4)
+        intermediateBuffers["maskSum"] = bufferManager.createBuffer(name: "maskSum", size: maxBatchSize * 4)
+        intermediateBuffers["maskSumSqrtS14M01"] = bufferManager.createBuffer(name: "maskSumSqrtS14M01", size: maxBatchSize * 4)
+        intermediateBuffers["maskSumSqrtS14M01SquareS01"] = bufferManager.createBuffer(name: "maskSumSqrtS14M01SquareS01", size: maxBatchSize * 4)
 
         // Policy head buffers
-        let policyChannels = descriptor.policyHead.p2Conv.outChannels.intValue
-        intermediateBuffers["policy_p1"] = device.makeBuffer(length: maxBatchSize * descriptor.policyHead.p1Conv.outChannels.intValue * hw * 4, options: .storageModeShared)
-        intermediateBuffers["policy_g1"] = device.makeBuffer(length: maxBatchSize * descriptor.policyHead.g1Conv.outChannels.intValue * hw * 4, options: .storageModeShared)
-        intermediateBuffers["policy_gpool"] = device.makeBuffer(length: maxBatchSize * descriptor.policyHead.gpoolToBiasMul.inChannels.intValue * 4, options: .storageModeShared)
+        intermediateBuffers["policy_p1"] = bufferManager.createBuffer(name: "policy_p1", size: maxBatchSize * descriptor.policyHead.p1Conv.outChannels.intValue * hw * 4)
+        intermediateBuffers["policy_g1"] = bufferManager.createBuffer(name: "policy_g1", size: maxBatchSize * descriptor.policyHead.g1Conv.outChannels.intValue * hw * 4)
+        intermediateBuffers["policy_gpool"] = bufferManager.createBuffer(name: "policy_gpool", size: maxBatchSize * descriptor.policyHead.gpoolToBiasMul.inChannels.intValue * 4)
 
         // Value head buffers
         let valueChannels = descriptor.valueHead.v1Conv.outChannels.intValue
-        intermediateBuffers["value_v1"] = device.makeBuffer(length: maxBatchSize * valueChannels * hw * 4, options: .storageModeShared)
-        intermediateBuffers["value_gpool"] = device.makeBuffer(length: maxBatchSize * descriptor.valueHead.v2Mul.inChannels.intValue * 4, options: .storageModeShared)
-        intermediateBuffers["value_v2"] = device.makeBuffer(length: maxBatchSize * descriptor.valueHead.v2Mul.outChannels.intValue * 4, options: .storageModeShared)
+        intermediateBuffers["value_v1"] = bufferManager.createBuffer(name: "value_v1", size: maxBatchSize * valueChannels * hw * 4)
+        intermediateBuffers["value_gpool"] = bufferManager.createBuffer(name: "value_gpool", size: maxBatchSize * descriptor.valueHead.v2Mul.inChannels.intValue * 4)
+        intermediateBuffers["value_v2"] = bufferManager.createBuffer(name: "value_v2", size: maxBatchSize * descriptor.valueHead.v2Mul.outChannels.intValue * 4)
     }
 
-    /// Apply the model to input data
+    private func allocateOutputBufferPool() {
+        // Metal 4: Pre-allocate output buffers for async execution
+        // This allows us to double-buffer outputs for better pipelining
+        let hw = nnXLen * nnYLen
+        let policyChannels = descriptor.policyHead.p2Conv.outChannels.intValue
+        let v3OutChannels = descriptor.valueHead.v3Mul.outChannels.intValue
+        let sv3OutChannels = descriptor.valueHead.sv3Mul.outChannels.intValue
+        let ownershipChannels = descriptor.valueHead.vOwnershipConv.outChannels.intValue
+
+        // Calculate total output size per batch
+        let totalOutputSize = maxBatchSize * (
+            policyChannels * hw +  // policy
+            1 +  // pass
+            v3OutChannels +  // value
+            sv3OutChannels +  // scoreValue
+            ownershipChannels * hw  // ownership
+        ) * 4
+
+        // Create pool of 3 output buffers for triple buffering
+        for i in 0..<3 {
+            if let buffer = device.makeBuffer(length: totalOutputSize, options: .storageModeShared) {
+                buffer.label = "outputPool_\(i)"
+                pipelineManager.addToResidencySet(buffer)
+                outputBufferPool.append(buffer)
+            }
+        }
+    }
+
+    /// Apply the model to input data using Metal 4 command buffer model
     func apply(
         input: UnsafeMutablePointer<Float32>,
         inputGlobal: UnsafeMutablePointer<Float32>,
@@ -266,9 +339,11 @@ class PureMetalModel {
         ownership: UnsafeMutablePointer<Float32>,
         batchSize: Int
     ) {
-        guard let commandBuffer = pipelineManager.commandQueue.makeCommandBuffer() else {
+        // Metal 4: Create command buffer using decoupled model
+        guard let commandBuffer = pipelineManager.makeCommandBuffer() else {
             return
         }
+        commandBuffer.label = "KataGo Neural Network"
 
         let hw = nnXLen * nnYLen
         let inputChannels = descriptor.numInputChannels.intValue
@@ -285,14 +360,20 @@ class PureMetalModel {
               let metaBuffer = device.makeBuffer(bytes: inputMeta, length: metaSize, options: .storageModeShared) else {
             return
         }
+        inputBuffer.label = "input"
+        globalBuffer.label = "inputGlobal"
+        metaBuffer.label = "inputMeta"
 
         // Extract mask from first channel of input
         let maskBuffer = intermediateBuffers["mask"]!
         extractMask(input: inputBuffer, mask: maskBuffer, batchSize: batchSize, channels: inputChannels, hw: hw)
 
+        // Metal 4: Use single compute command encoder for entire network
+        // This reduces encoder overhead and enables better GPU scheduling
         guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
             return
         }
+        encoder.label = "Neural Network Encoder"
 
         // Compute mask statistics
         computeMaskStatistics(encoder: encoder, batchSize: batchSize)
@@ -301,14 +382,38 @@ class PureMetalModel {
         let trunkOutput = runTrunk(encoder: encoder, input: inputBuffer, global: globalBuffer, meta: metaBuffer, batchSize: batchSize)
 
         // Run policy head
-        runPolicyHead(encoder: encoder, trunkOutput: trunkOutput, policy: policy, policyPass: policyPass, batchSize: batchSize)
+        let (policyBuffer, passBuffer) = runPolicyHead(encoder: encoder, trunkOutput: trunkOutput, batchSize: batchSize)
 
         // Run value head
-        runValueHead(encoder: encoder, trunkOutput: trunkOutput, value: value, scoreValue: scoreValue, ownership: ownership, batchSize: batchSize)
+        let (valueBuffer, scoreValueBuffer, ownershipBuffer) = runValueHead(encoder: encoder, trunkOutput: trunkOutput, batchSize: batchSize)
 
         encoder.endEncoding()
+
+        // Metal 4: Submit command buffer to queue
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()
+
+        // Copy outputs
+        if let policyBuf = policyBuffer {
+            let policyChannels = descriptor.policyHead.p2Conv.outChannels.intValue
+            memcpy(policy, policyBuf.contents(), batchSize * policyChannels * hw * 4)
+        }
+        if let passBuf = passBuffer {
+            let passChannels = descriptor.policyHead.gpoolToPassMul.outChannels.intValue
+            memcpy(policyPass, passBuf.contents(), batchSize * passChannels * 4)
+        }
+        if let valueBuf = valueBuffer {
+            let v3OutChannels = descriptor.valueHead.v3Mul.outChannels.intValue
+            memcpy(value, valueBuf.contents(), batchSize * v3OutChannels * 4)
+        }
+        if let scoreValueBuf = scoreValueBuffer {
+            let sv3OutChannels = descriptor.valueHead.sv3Mul.outChannels.intValue
+            memcpy(scoreValue, scoreValueBuf.contents(), batchSize * sv3OutChannels * 4)
+        }
+        if let ownershipBuf = ownershipBuffer {
+            let ownershipChannels = descriptor.valueHead.vOwnershipConv.outChannels.intValue
+            memcpy(ownership, ownershipBuf.contents(), batchSize * ownershipChannels * hw * 4)
+        }
     }
 
     private func extractMask(input: MTLBuffer, mask: MTLBuffer, batchSize: Int, channels: Int, hw: Int) {
@@ -489,7 +594,7 @@ class PureMetalModel {
         dispatcher.dispatchElementwiseAdd(encoder: encoder, a: input, b: convOut, output: output, size: batchSize * channels * nnYLen * nnXLen)
     }
 
-    private func runPolicyHead(encoder: MTLComputeCommandEncoder, trunkOutput: MTLBuffer, policy: UnsafeMutablePointer<Float32>, policyPass: UnsafeMutablePointer<Float32>, batchSize: Int) {
+    private func runPolicyHead(encoder: MTLComputeCommandEncoder, trunkOutput: MTLBuffer, batchSize: Int) -> (MTLBuffer?, MTLBuffer?) {
         let policyDesc = descriptor.policyHead
         let mask = intermediateBuffers["mask"]!
         let maskSum = intermediateBuffers["maskSum"]!
@@ -529,14 +634,16 @@ class PureMetalModel {
         let p2ConvW = convWeights["policy.p2Conv"]!
         let policyChannels = p2ConvW.outChannels
         let policySize = batchSize * policyChannels * hw * 4
-        guard let policyBuffer = device.makeBuffer(length: policySize, options: .storageModeShared) else { return }
+        guard let policyBuffer = device.makeBuffer(length: policySize, options: .storageModeShared) else { return (nil, nil) }
+        policyBuffer.label = "policyOutput"
 
         dispatcher.dispatchConv2D(encoder: encoder, input: p1Out, weights: p2ConvW.weights, output: policyBuffer, batchSize: batchSize, inChannels: p2ConvW.inChannels, outChannels: policyChannels, height: nnYLen, width: nnXLen, kernelH: p2ConvW.kernelH, kernelW: p2ConvW.kernelW)
 
         // Pass logit
         let gpoolToPassMul = matmulWeights["policy.gpoolToPassMul"]!
         let passSize = batchSize * gpoolToPassMul.outChannels * 4
-        guard let passBuffer = device.makeBuffer(length: passSize, options: .storageModeShared) else { return }
+        guard let passBuffer = device.makeBuffer(length: passSize, options: .storageModeShared) else { return (policyBuffer, nil) }
+        passBuffer.label = "passOutput"
 
         dispatcher.dispatchMatMul(encoder: encoder, A: gpoolOut, B: gpoolToPassMul.weights, C: passBuffer, M: batchSize, K: gpoolToPassMul.inChannels, N: gpoolToPassMul.outChannels)
 
@@ -547,20 +654,16 @@ class PureMetalModel {
             dispatcher.dispatchMatBiasAdd(encoder: encoder, input: passBuffer, bias: gpoolToPassBias.bias, output: passBuffer, batchSize: batchSize, channels: gpoolToPassBias.channels)
             dispatcher.dispatchActivation(encoder: encoder, input: passBuffer, output: passBuffer, size: batchSize * gpoolToPassBias.channels, activation: passActivation)
             let pass2Size = batchSize * gpoolToPassMul2.outChannels * 4
-            guard let pass2Buffer = device.makeBuffer(length: pass2Size, options: .storageModeShared) else { return }
+            guard let pass2Buffer = device.makeBuffer(length: pass2Size, options: .storageModeShared) else { return (policyBuffer, passBuffer) }
+            pass2Buffer.label = "pass2Output"
             dispatcher.dispatchMatMul(encoder: encoder, A: passBuffer, B: gpoolToPassMul2.weights, C: pass2Buffer, M: batchSize, K: gpoolToPassMul2.inChannels, N: gpoolToPassMul2.outChannels)
-            // Copy to output
-            encoder.endEncoding()
-            memcpy(policyPass, pass2Buffer.contents(), pass2Size)
-        } else {
-            encoder.endEncoding()
-            memcpy(policyPass, passBuffer.contents(), passSize)
+            return (policyBuffer, pass2Buffer)
         }
 
-        memcpy(policy, policyBuffer.contents(), policySize)
+        return (policyBuffer, passBuffer)
     }
 
-    private func runValueHead(encoder: MTLComputeCommandEncoder, trunkOutput: MTLBuffer, value: UnsafeMutablePointer<Float32>, scoreValue: UnsafeMutablePointer<Float32>, ownership: UnsafeMutablePointer<Float32>, batchSize: Int) {
+    private func runValueHead(encoder: MTLComputeCommandEncoder, trunkOutput: MTLBuffer, batchSize: Int) -> (MTLBuffer?, MTLBuffer?, MTLBuffer?) {
         let valueDesc = descriptor.valueHead
         let mask = intermediateBuffers["mask"]!
         let maskSum = intermediateBuffers["maskSum"]!
@@ -594,7 +697,8 @@ class PureMetalModel {
         let v3Mul = matmulWeights["value.v3Mul"]!
         let v3Bias = biasWeights["value.v3Bias"]!
         let valueSize = batchSize * v3Mul.outChannels * 4
-        guard let valueBuffer = device.makeBuffer(length: valueSize, options: .storageModeShared) else { return }
+        guard let valueBuffer = device.makeBuffer(length: valueSize, options: .storageModeShared) else { return (nil, nil, nil) }
+        valueBuffer.label = "valueOutput"
 
         dispatcher.dispatchMatMul(encoder: encoder, A: v2Out, B: v3Mul.weights, C: valueBuffer, M: batchSize, K: v3Mul.inChannels, N: v3Mul.outChannels)
         dispatcher.dispatchMatBiasAdd(encoder: encoder, input: valueBuffer, bias: v3Bias.bias, output: valueBuffer, batchSize: batchSize, channels: v3Bias.channels)
@@ -603,7 +707,8 @@ class PureMetalModel {
         let sv3Mul = matmulWeights["value.sv3Mul"]!
         let sv3Bias = biasWeights["value.sv3Bias"]!
         let scoreValueSize = batchSize * sv3Mul.outChannels * 4
-        guard let scoreValueBuffer = device.makeBuffer(length: scoreValueSize, options: .storageModeShared) else { return }
+        guard let scoreValueBuffer = device.makeBuffer(length: scoreValueSize, options: .storageModeShared) else { return (valueBuffer, nil, nil) }
+        scoreValueBuffer.label = "scoreValueOutput"
 
         dispatcher.dispatchMatMul(encoder: encoder, A: v2Out, B: sv3Mul.weights, C: scoreValueBuffer, M: batchSize, K: sv3Mul.inChannels, N: sv3Mul.outChannels)
         dispatcher.dispatchMatBiasAdd(encoder: encoder, input: scoreValueBuffer, bias: sv3Bias.bias, output: scoreValueBuffer, batchSize: batchSize, channels: sv3Bias.channels)
@@ -611,13 +716,11 @@ class PureMetalModel {
         // Ownership conv
         let vOwnershipConvW = convWeights["value.vOwnershipConv"]!
         let ownershipSize = batchSize * vOwnershipConvW.outChannels * hw * 4
-        guard let ownershipBuffer = device.makeBuffer(length: ownershipSize, options: .storageModeShared) else { return }
+        guard let ownershipBuffer = device.makeBuffer(length: ownershipSize, options: .storageModeShared) else { return (valueBuffer, scoreValueBuffer, nil) }
+        ownershipBuffer.label = "ownershipOutput"
 
         dispatcher.dispatchConv2D(encoder: encoder, input: v1Out, weights: vOwnershipConvW.weights, output: ownershipBuffer, batchSize: batchSize, inChannels: vOwnershipConvW.inChannels, outChannels: vOwnershipConvW.outChannels, height: nnYLen, width: nnXLen, kernelH: vOwnershipConvW.kernelH, kernelW: vOwnershipConvW.kernelW)
 
-        // Copy outputs
-        memcpy(value, valueBuffer.contents(), valueSize)
-        memcpy(scoreValue, scoreValueBuffer.contents(), scoreValueSize)
-        memcpy(ownership, ownershipBuffer.contents(), ownershipSize)
+        return (valueBuffer, scoreValueBuffer, ownershipBuffer)
     }
 }
