@@ -66,7 +66,8 @@ class MetalPipelineManager {
         self.commandAllocator = device.makeHeap(descriptor: heapDescriptor)
 
         // Create residency set for efficient resource management (Metal 4 feature)
-        if #available(macOS 15.0, iOS 18.0, *) {
+        // Metal 4 requires macOS 26 (Tahoe) / iOS 26, announced at WWDC 2025
+        if #available(macOS 26.0, iOS 26.0, *) {
             let residencyDescriptor = MTLResidencySetDescriptor()
             residencyDescriptor.label = "KataGo Residency Set"
             residencyDescriptor.initialCapacity = 1024  // Expected number of resources
@@ -141,9 +142,8 @@ class MetalPipelineManager {
         descriptor.supportIndirectCommandBuffers = true
 
         // Metal 4: Enable dynamic libraries linking if needed
-        if #available(macOS 14.0, iOS 17.0, *) {
-            descriptor.supportAddingBinaryFunctions = false  // We don't need dynamic functions
-        }
+        // supportAddingBinaryFunctions available since macOS 11.0
+        descriptor.supportAddingBinaryFunctions = false  // We don't need dynamic functions
 
         return try device.makeComputePipelineState(descriptor: descriptor, options: [], reflection: nil)
     }
@@ -161,14 +161,14 @@ class MetalPipelineManager {
 
     /// Add a buffer to the residency set for Metal 4 resource management
     func addToResidencySet(_ buffer: MTLBuffer) {
-        if #available(macOS 15.0, iOS 18.0, *) {
+        if #available(macOS 26.0, iOS 26.0, *) {
             residencySet?.addAllocation(buffer)
         }
     }
 
     /// Commit the residency set before execution
     func commitResidency() {
-        if #available(macOS 15.0, iOS 18.0, *) {
+        if #available(macOS 26.0, iOS 26.0, *) {
             residencySet?.commit()
         }
     }
