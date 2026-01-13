@@ -330,12 +330,9 @@ class MetalComputeDispatcher {
         encoder.setBytes(&h, length: 4, index: 6)
         encoder.setBytes(&w, length: 4, index: 7)
 
-        if kernelH == 1 && kernelW == 1 {
-            // 1x1 conv expects dilation at index 8-9
-            encoder.setBytes(&dh, length: 4, index: 8)
-            encoder.setBytes(&dw, length: 4, index: 9)
-        } else {
-            // Other convs expect kernel size at 8-9, dilation at 10-11
+        // 1x1 conv kernel only takes 8 params (0-7), no dilation needed
+        // 3x3 and general convs take kernel size at 8-9, dilation at 10-11
+        if kernelH != 1 || kernelW != 1 {
             encoder.setBytes(&kh, length: 4, index: 8)
             encoder.setBytes(&kw, length: 4, index: 9)
             encoder.setBytes(&dh, length: 4, index: 10)
