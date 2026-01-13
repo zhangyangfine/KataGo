@@ -114,12 +114,36 @@ elseif(USE_BACKEND STREQUAL "METAL")
   set(NEURALNET_BACKEND_SOURCES
     neuralnet/metalbackend.cpp
     )
+  # Metal shader compilation
+  set(METAL_SHADER_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/neuralnet/metalbackend.metal")
+  set(METAL_SHADER_AIR "${CMAKE_CURRENT_BINARY_DIR}/metalbackend.air")
+  set(METAL_SHADER_LIB "${CMAKE_CURRENT_BINARY_DIR}/metalbackend.metallib")
+
+  add_custom_command(
+    OUTPUT ${METAL_SHADER_AIR}
+    COMMAND xcrun -sdk macosx metal -c ${METAL_SHADER_SOURCE} -o ${METAL_SHADER_AIR}
+    DEPENDS ${METAL_SHADER_SOURCE}
+    COMMENT "Compiling Metal shader to AIR"
+  )
+  add_custom_command(
+    OUTPUT ${METAL_SHADER_LIB}
+    COMMAND xcrun -sdk macosx metallib ${METAL_SHADER_AIR} -o ${METAL_SHADER_LIB}
+    DEPENDS ${METAL_SHADER_AIR}
+    COMMENT "Creating Metal library"
+  )
+  add_custom_target(MetalShaders DEPENDS ${METAL_SHADER_LIB})
+
   add_library(KataGoSwift STATIC
-    neuralnet/metalbackend.swift)
+    neuralnet/metalbackend.swift
+    neuralnet/metalbackend_pure.swift
+    neuralnet/metalbackend_model.swift)
+  add_dependencies(KataGoSwift MetalShaders)
   _swift_generate_cxx_header(
     KataGoSwift
     "${CMAKE_CURRENT_BINARY_DIR}/include/KataGoSwift/KataGoSwift-swift.h"
-    SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/neuralnet/metalbackend.swift")
+    SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/neuralnet/metalbackend.swift"
+            "${CMAKE_CURRENT_SOURCE_DIR}/neuralnet/metalbackend_pure.swift"
+            "${CMAKE_CURRENT_SOURCE_DIR}/neuralnet/metalbackend_model.swift")
   target_include_directories(KataGoSwift PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/include")
   set_target_properties(KataGoSwift PROPERTIES Swift_MODULE_NAME "KataGoSwift")
   target_compile_options(KataGoSwift PUBLIC

@@ -3200,12 +3200,36 @@ public func createMetalComputeContext(
         nnYLen: nnYLen)
 }
 
-/// A class that represents a handle of GPU device.
-public class MetalComputeHandle {
-    let model: Model
+/// Configuration for Metal backend mode
+public enum MetalBackendMode {
+    case mpsgraph   // Original MPSGraph-based implementation
+    case pureMetal  // New pure Metal 4 compute shader implementation
+}
 
-    init(model: Model) {
-        self.model = model
+/// Global configuration - set to .pureMetal for maximum performance
+public var metalBackendMode: MetalBackendMode = .pureMetal
+
+/// A class that represents a handle of GPU device.
+/// Supports both MPSGraph and pure Metal 4 backends for maximum performance.
+public class MetalComputeHandle {
+    // MPSGraph-based model (legacy)
+    let mpsgraphModel: Model?
+
+    // Pure Metal model (optimized)
+    let pureMetalModel: PureMetalModel?
+
+    let mode: MetalBackendMode
+
+    init(mpsgraphModel: Model) {
+        self.mpsgraphModel = mpsgraphModel
+        self.pureMetalModel = nil
+        self.mode = .mpsgraph
+    }
+
+    init(pureMetalModel: PureMetalModel) {
+        self.mpsgraphModel = nil
+        self.pureMetalModel = pureMetalModel
+        self.mode = .pureMetal
     }
 
     public func apply(
@@ -3220,16 +3244,30 @@ public class MetalComputeHandle {
         batchSize: Int
     ) {
         autoreleasepool {
-            model.apply(
-                input: inputPointer,
-                inputGlobal: inputGlobalPointer,
-                inputMeta: inputMetaPointer,
-                policy: policy,
-                policyPass: policyPass,
-                value: value,
-                scoreValue: scoreValue,
-                ownership: ownership,
-                batchSize: batchSize)
+            switch mode {
+            case .mpsgraph:
+                mpsgraphModel?.apply(
+                    input: inputPointer,
+                    inputGlobal: inputGlobalPointer,
+                    inputMeta: inputMetaPointer,
+                    policy: policy,
+                    policyPass: policyPass,
+                    value: value,
+                    scoreValue: scoreValue,
+                    ownership: ownership,
+                    batchSize: batchSize)
+            case .pureMetal:
+                pureMetalModel?.apply(
+                    input: inputPointer,
+                    inputGlobal: inputGlobalPointer,
+                    inputMeta: inputMetaPointer,
+                    policy: policy,
+                    policyPass: policyPass,
+                    value: value,
+                    scoreValue: scoreValue,
+                    ownership: ownership,
+                    batchSize: batchSize)
+            }
         }
     }
 }
@@ -3244,18 +3282,48 @@ public func maybeCreateMetalComputeHandle(
 
     let device = MTLCreateSystemDefaultDevice()!
 
-    let model = Model(
-        device: device,
-        graph: MPSGraph(),
-        descriptor: descriptor,
-        nnXLen: context.nnXLen as NSNumber,
-        nnYLen: context.nnYLen as NSNumber)
+    let handle: MetalComputeHandle
 
-    let handle = MetalComputeHandle(model: model)
-
-    printError(
-        "Metal backend \(serverThreadIdx): \(device.name), Model version \(descriptor.version) \(descriptor.name), \(context.nnXLen)x\(context.nnYLen)"
-    )
+    switch metalBackendMode {
+    case .pureMetal:
+        // Use pure Metal 4 compute shaders for maximum performance
+        do {
+            let pureModel = try PureMetalModel(
+                device: device,
+                descriptor: descriptor,
+                nnXLen: Int(context.nnXLen),
+                nnYLen: Int(context.nnYLen))
+            handle = MetalComputeHandle(pureMetalModel: pureModel)
+            printError(
+                "Pure Metal 4 backend \(serverThreadIdx): \(device.name), Model version \(descriptor.version) \(descriptor.name), \(context.nnXLen)x\(context.nnYLen)"
+            )
+        } catch {
+            // Fallback to MPSGraph if pure Metal fails
+            printError("Pure Metal backend initialization failed, falling back to MPSGraph: \(error)")
+            let model = Model(
+                device: device,
+                graph: MPSGraph(),
+                descriptor: descriptor,
+                nnXLen: context.nnXLen as NSNumber,
+                nnYLen: context.nnYLen as NSNumber)
+            handle = MetalComputeHandle(mpsgraphModel: model)
+            printError(
+                "Metal MPSGraph backend \(serverThreadIdx): \(device.name), Model version \(descriptor.version) \(descriptor.name), \(context.nnXLen)x\(context.nnYLen)"
+            )
+        }
+    case .mpsgraph:
+        // Use original MPSGraph implementation
+        let model = Model(
+            device: device,
+            graph: MPSGraph(),
+            descriptor: descriptor,
+            nnXLen: context.nnXLen as NSNumber,
+            nnYLen: context.nnYLen as NSNumber)
+        handle = MetalComputeHandle(mpsgraphModel: model)
+        printError(
+            "Metal MPSGraph backend \(serverThreadIdx): \(device.name), Model version \(descriptor.version) \(descriptor.name), \(context.nnXLen)x\(context.nnYLen)"
+        )
+    }
 
     return handle
 }
