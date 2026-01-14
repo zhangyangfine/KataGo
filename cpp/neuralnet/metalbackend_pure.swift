@@ -516,7 +516,8 @@ class MetalComputeDispatcher {
     /// Insert a barrier to ensure previous dispatches complete before subsequent ones read their output
     func insertBarrier(encoder: MTL4ComputeCommandEncoder) {
         // Metal 4 barrier: wait for dispatch stage to complete before allowing dispatch stage to proceed
-        encoder.barrier(afterEncoderStages: .dispatch, beforeEncoderStages: .dispatch, visibilityOptions: [])
+        // Use .device visibility to ensure buffer writes are visible to subsequent reads
+        encoder.barrier(afterEncoderStages: .dispatch, beforeEncoderStages: .dispatch, visibilityOptions: .device)
     }
 
     func dispatchActivation(

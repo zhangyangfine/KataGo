@@ -88,10 +88,11 @@ public func createSWConvLayerDesc(
 }
 
 /// A struct that represents a description of a batch normalization layer.
+/// This struct COPIES the data to avoid use-after-modification bugs with reused thread_local buffers.
 public struct SWBatchNormLayerDesc {
     let numChannels: NSNumber
-    let mergedScale: UnsafeMutablePointer<Float32>
-    let mergedBias: UnsafeMutablePointer<Float32>
+    let mergedScale: [Float32]  // Owned copy of scale data
+    let mergedBias: [Float32]   // Owned copy of bias data
 
     init(
         numChannels: NSNumber,
@@ -99,8 +100,10 @@ public struct SWBatchNormLayerDesc {
         mergedBias: UnsafeMutablePointer<Float32>
     ) {
         self.numChannels = numChannels
-        self.mergedScale = mergedScale
-        self.mergedBias = mergedBias
+        let count = numChannels.intValue
+        // Copy the data so it's owned by this struct
+        self.mergedScale = Array(UnsafeBufferPointer(start: mergedScale, count: count))
+        self.mergedBias = Array(UnsafeBufferPointer(start: mergedBias, count: count))
     }
 }
 

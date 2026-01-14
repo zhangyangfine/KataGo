@@ -226,6 +226,7 @@ class PureMetalModel {
 
     private func loadBNWeights(_ desc: SWBatchNormLayerDesc, name: String) throws -> BatchNormWeightBuffers {
         let size = desc.numChannels.intValue * 4
+
         guard let scaleBuffer = device.makeBuffer(bytes: desc.mergedScale, length: size, options: .storageModeShared),
               let biasBuffer = device.makeBuffer(bytes: desc.mergedBias, length: size, options: .storageModeShared) else {
             throw MetalError.bufferCreationFailed
@@ -441,13 +442,9 @@ class PureMetalModel {
         let maskSumSqrtS14M01 = intermediateBuffers["maskSumSqrtS14M01"]!
         let maskSumSqrtS14M01SquareS01 = intermediateBuffers["maskSumSqrtS14M01SquareS01"]!
 
-        // Compute maskSum on CPU using fixed value (assumes full board mask)
-        // GPU mask_sum kernel is available but requires synchronization to read mask values
-        let hw = nnXLen * nnYLen
-        let maskSumPtr = maskSum.contents().assumingMemoryBound(to: Float32.self)
-        for b in 0..<batchSize {
-            maskSumPtr[b] = Float32(hw)
-        }
+        // Compute maskSum on GPU from actual mask values
+        let mask = intermediateBuffers["mask"]!
+        dispatcher.dispatchMaskSum(encoder: encoder, mask: mask, maskSum: maskSum, batchSize: batchSize, height: nnYLen, width: nnXLen)
 
         // Compute derived mask statistics on GPU
         dispatcher.dispatchMaskSumSqrtS14M01(encoder: encoder, maskSum: maskSum, output: maskSumSqrtS14M01, batchSize: batchSize)
@@ -461,13 +458,14 @@ class PureMetalModel {
 
         // Initial conv
         let initialConvW = convWeights["trunk.initialConv"]!
+        let convOut = intermediateBuffers["conv_out"]!
         var currentBuffer = intermediateBuffers["trunk0"]!
 
         dispatcher.dispatchConv2D(
             encoder: encoder,
             input: input,
             weights: initialConvW.weights,
-            output: currentBuffer,
+            output: convOut,
             batchSize: batchSize,
             inChannels: initialConvW.inChannels,
             outChannels: initialConvW.outChannels,
@@ -491,9 +489,10 @@ class PureMetalModel {
             N: initialMatMulW.outChannels
         )
 
+        // Add bias to conv output
         dispatcher.dispatchAddNCBias(
             encoder: encoder,
-            input: currentBuffer,
+            input: convOut,
             bias: matmulOut,
             output: currentBuffer,
             batchSize: batchSize,
@@ -502,7 +501,7 @@ class PureMetalModel {
             width: nnXLen
         )
 
-        // Process residual blocks
+        // Process residual blocks (using trunk0/trunk1)
         var nextBuffer = intermediateBuffers["trunk1"]!
 
         for (i, wrapper) in trunk.blockDescriptors.enumerated() {
