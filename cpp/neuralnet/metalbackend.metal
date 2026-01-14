@@ -589,11 +589,11 @@ kernel void mask_sum(
     constant int& height [[buffer(3)]],
     constant int& width [[buffer(4)]],
     threadgroup float* sharedData [[threadgroup(0)]],
-    uint gid [[thread_position_in_grid]],
+    uint tgid [[threadgroup_position_in_grid]],
     uint tid [[thread_index_in_threadgroup]],
     uint tgSize [[threads_per_threadgroup]])
 {
-    int b = gid;
+    int b = tgid;  // Each threadgroup handles one batch element
     if (b >= batchSize) return;
 
     int hw = height * width;

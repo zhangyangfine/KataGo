@@ -185,9 +185,11 @@ class MetalPipelineManager {
         residencySet.addAllocation(buffer)
     }
 
-    /// Commit the residency set before execution
+    /// Commit the residency set and add to command queue
     func commitResidency() {
         residencySet.commit()
+        // Metal 4: Must add residency set to command queue for resources to be available
+        mtl4CommandQueue.addResidencySet(residencySet)
     }
 
     /// Submit command buffer to Metal 4 queue and signal event
@@ -294,6 +296,7 @@ class MetalComputeDispatcher {
 
     // Current offset into constants buffer for parameter storage
     var constantsOffset: Int = 0
+    var debugMode: Bool = false
 
     init(pipelineManager: MetalPipelineManager) {
         self.pipelineManager = pipelineManager
@@ -318,18 +321,30 @@ class MetalComputeDispatcher {
     }
 
     /// Configure argument table with buffer bindings
-    private func configureArgumentTable(buffers: [(MTLBuffer, Int)], constants: [(Int32, Int)]) {
+    private func configureArgumentTable(buffers: [(MTLBuffer, Int)], constants: [(Int32, Int)], debugLabel: String = "") {
         let argTable = pipelineManager.argumentTable
+
+        let showDebug = debugMode && !debugLabel.isEmpty
+
+        if showDebug {
+            print("DEBUG configureArgumentTable: \(debugLabel)")
+        }
 
         // Bind data buffers
         for (buffer, index) in buffers {
             argTable.setAddress(buffer.gpuAddress, index: index)
+            if showDebug {
+                print("  Buffer[\(index)] = 0x\(String(format: "%llx", buffer.gpuAddress))")
+            }
         }
 
         // Bind constants (written to constants buffer)
         for (value, index) in constants {
             let address = writeConstant(value)
             argTable.setAddress(address, index: index)
+            if showDebug {
+                print("  Constant[\(index)] = \(value) @ 0x\(String(format: "%llx", address))")
+            }
         }
     }
 
@@ -408,7 +423,7 @@ class MetalComputeDispatcher {
             constants.append((Int32(dilationW), 11))
         }
 
-        configureArgumentTable(buffers: buffers, constants: constants)
+        configureArgumentTable(buffers: buffers, constants: constants, debugLabel: "Conv2D \(kernelH)x\(kernelW)")
         encoder.setArgumentTable(pipelineManager.argumentTable)
 
         let threadsPerGrid = MTLSize(width: width, height: height, depth: batchSize * outChannels)
@@ -454,13 +469,20 @@ class MetalComputeDispatcher {
                 (Int32(channels), 6),
                 (Int32(height), 7),
                 (Int32(width), 8)
-            ]
+            ],
+            debugLabel: "BatchNorm"
         )
         encoder.setArgumentTable(pipelineManager.argumentTable)
 
         let threadsPerGrid = MTLSize(width: width, height: height, depth: batchSize * channels)
         let threadsPerGroup = optimalThreadgroupSize(for: pipeline, workSize: threadsPerGrid)
         encoder.dispatchThreads(threadsPerGrid: threadsPerGrid, threadsPerThreadgroup: threadsPerGroup)
+    }
+
+    /// Insert a barrier to ensure previous dispatches complete before subsequent ones read their output
+    func insertBarrier(encoder: MTL4ComputeCommandEncoder) {
+        // Metal 4 barrier: wait for dispatch stage to complete before allowing dispatch stage to proceed
+        encoder.barrier(afterEncoderStages: .dispatch, beforeEncoderStages: .dispatch, visibilityOptions: [])
     }
 
     func dispatchActivation(

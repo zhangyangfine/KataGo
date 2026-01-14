@@ -26,12 +26,33 @@ SWConvLayerDesc MetalProcess::convLayerDescToSwift(const ConvLayerDesc * desc) {
 /// Converts a BatchNormLayerDesc instance from C++ to Swift by creating a new SWBatchNormLayerDesc instance with the same properties.
 /// - Parameter desc: The BatchNormLayerDesc instance to convert.
 /// - Returns: A SWBatchNormLayerDesc instance with the same properties as the input BatchNormLayerDesc.
+// Thread-local storage for computed merged scale/bias when not pre-computed
+static thread_local std::vector<float> tempMergedScale;
+static thread_local std::vector<float> tempMergedBias;
+
 SWBatchNormLayerDesc MetalProcess::batchNormLayerDescToSwift(const BatchNormLayerDesc * desc) {
+  const float* scalePtr;
+  const float* biasPtr;
+
+  // If mergedScale/mergedBias are empty, compute them from the raw parameters
+  if(desc->mergedScale.empty() || desc->mergedBias.empty()) {
+    tempMergedScale.resize(desc->numChannels);
+    tempMergedBias.resize(desc->numChannels);
+    for(int c = 0; c < desc->numChannels; c++) {
+      tempMergedScale[c] = desc->scale[c] / sqrt(desc->variance[c] + desc->epsilon);
+      tempMergedBias[c] = desc->bias[c] - tempMergedScale[c] * desc->mean[c];
+    }
+    scalePtr = tempMergedScale.data();
+    biasPtr = tempMergedBias.data();
+  } else {
+    scalePtr = desc->mergedScale.data();
+    biasPtr = desc->mergedBias.data();
+  }
 
   SWBatchNormLayerDesc swDesc =
   createSWBatchNormLayerDesc(desc->numChannels,
-                             (float*)desc->mergedScale.data(),
-                             (float*)desc->mergedBias.data());
+                             (float*)scalePtr,
+                             (float*)biasPtr);
 
   return swDesc;
 }
@@ -56,15 +77,48 @@ ActivationKind MetalProcess::activationLayerDescToSwift(const ActivationLayerDes
   }
 }
 
+// Helper to compute merged BN values into provided storage
+static void computeMergedBN(const BatchNormLayerDesc* desc, std::vector<float>& scale, std::vector<float>& bias) {
+  scale.resize(desc->numChannels);
+  bias.resize(desc->numChannels);
+  if(desc->mergedScale.empty() || desc->mergedBias.empty()) {
+    for(int c = 0; c < desc->numChannels; c++) {
+      scale[c] = desc->scale[c] / sqrt(desc->variance[c] + desc->epsilon);
+      bias[c] = desc->bias[c] - scale[c] * desc->mean[c];
+    }
+  } else {
+    for(int c = 0; c < desc->numChannels; c++) {
+      scale[c] = desc->mergedScale[c];
+      bias[c] = desc->mergedBias[c];
+    }
+  }
+}
+
+// Thread-local storage for residual block BN layers
+static thread_local std::vector<float> resPreBNScale, resPreBNBias;
+static thread_local std::vector<float> resMidBNScale, resMidBNBias;
+
 /// Convert a residual block description from C++ to Swift
 /// - Parameter desc: A residual block description
 /// - Returns: The residual block description converted to SWResidualBlockDesc
 SWResidualBlockDesc MetalProcess::residualBlockDescToSwift(const ResidualBlockDesc * desc) {
 
-  SWBatchNormLayerDesc preBN = batchNormLayerDescToSwift(&desc->preBN);
+  // Use separate storage for each BN layer to avoid pointer aliasing
+  computeMergedBN(&desc->preBN, resPreBNScale, resPreBNBias);
+  SWBatchNormLayerDesc preBN = createSWBatchNormLayerDesc(
+    desc->preBN.numChannels,
+    resPreBNScale.data(),
+    resPreBNBias.data());
+
   ActivationKind preActivationKind = activationLayerDescToSwift(&desc->preActivation);
   SWConvLayerDesc regularConv = convLayerDescToSwift(&desc->regularConv);
-  SWBatchNormLayerDesc midBN = batchNormLayerDescToSwift(&desc->midBN);
+
+  computeMergedBN(&desc->midBN, resMidBNScale, resMidBNBias);
+  SWBatchNormLayerDesc midBN = createSWBatchNormLayerDesc(
+    desc->midBN.numChannels,
+    resMidBNScale.data(),
+    resMidBNBias.data());
+
   ActivationKind midActivationKind = activationLayerDescToSwift(&desc->midActivation);
   SWConvLayerDesc finalConv = convLayerDescToSwift(&desc->finalConv);
 
@@ -91,19 +145,42 @@ SWMatMulLayerDesc MetalProcess::matMulLayerDescToSwift(const MatMulLayerDesc * d
   return swDesc;
 }
 
+// Thread-local storage for global pooling residual block BN layers
+static thread_local std::vector<float> gpoolPreBNScale, gpoolPreBNBias;
+static thread_local std::vector<float> gpoolGpoolBNScale, gpoolGpoolBNBias;
+static thread_local std::vector<float> gpoolMidBNScale, gpoolMidBNBias;
+
 /// Convert a global pooling residual block description from C++ to Swift
 /// - Parameter desc: A global pooling residual block description
 /// - Returns: The global pooling residual block description converted to SWGlobalPoolingResidualBlockDesc
 SWGlobalPoolingResidualBlockDesc MetalProcess::globalPoolingResidualBlockDescToSwift(const GlobalPoolingResidualBlockDesc* desc) {
 
-  SWBatchNormLayerDesc preBN = batchNormLayerDescToSwift(&desc->preBN);
+  // Use separate storage for each BN layer to avoid pointer aliasing
+  computeMergedBN(&desc->preBN, gpoolPreBNScale, gpoolPreBNBias);
+  SWBatchNormLayerDesc preBN = createSWBatchNormLayerDesc(
+    desc->preBN.numChannels,
+    gpoolPreBNScale.data(),
+    gpoolPreBNBias.data());
+
   ActivationKind preActivationKind = activationLayerDescToSwift(&desc->preActivation);
   SWConvLayerDesc regularConv = convLayerDescToSwift(&desc->regularConv);
   SWConvLayerDesc gpoolConv = convLayerDescToSwift(&desc->gpoolConv);
-  SWBatchNormLayerDesc gpoolBN = batchNormLayerDescToSwift(&desc->gpoolBN);
+
+  computeMergedBN(&desc->gpoolBN, gpoolGpoolBNScale, gpoolGpoolBNBias);
+  SWBatchNormLayerDesc gpoolBN = createSWBatchNormLayerDesc(
+    desc->gpoolBN.numChannels,
+    gpoolGpoolBNScale.data(),
+    gpoolGpoolBNBias.data());
+
   ActivationKind gpoolActivationKind = activationLayerDescToSwift(&desc->gpoolActivation);
   SWMatMulLayerDesc gpoolToBiasMul = matMulLayerDescToSwift(&desc->gpoolToBiasMul);
-  SWBatchNormLayerDesc midBN = batchNormLayerDescToSwift(&desc->midBN);
+
+  computeMergedBN(&desc->midBN, gpoolMidBNScale, gpoolMidBNBias);
+  SWBatchNormLayerDesc midBN = createSWBatchNormLayerDesc(
+    desc->midBN.numChannels,
+    gpoolMidBNScale.data(),
+    gpoolMidBNBias.data());
+
   ActivationKind midActivationKind = activationLayerDescToSwift(&desc->midActivation);
   SWConvLayerDesc finalConv = convLayerDescToSwift(&desc->finalConv);
 
@@ -1032,7 +1109,9 @@ bool NeuralNet::testEvaluateConv(
   vector<float>& outputBuffer) {
 
   (void)useFP16;
-  (void)useNHWC;
+  // Metal backend only supports NCHW format
+  if(useNHWC)
+    return false;
   return MetalProcess::testEvaluateConv(desc, batchSize, nnXLen, nnYLen, inputBuffer, outputBuffer);
 }
 
@@ -1086,7 +1165,9 @@ bool NeuralNet::testEvaluateBatchNorm(
   vector<float>& outputBuffer) {
 
   (void)useFP16;
-  (void)useNHWC;
+  // Metal backend only supports NCHW format
+  if(useNHWC)
+    return false;
   return MetalProcess::testEvaluateBatchNorm(desc, batchSize, nnXLen, nnYLen, inputBuffer, maskBuffer, outputBuffer);
 }
 
@@ -1140,7 +1221,9 @@ bool NeuralNet::testEvaluateResidualBlock(
   vector<float>& outputBuffer) {
 
   (void)useFP16;
-  (void)useNHWC;
+  // Metal backend only supports NCHW format
+  if(useNHWC)
+    return false;
   return MetalProcess::testEvaluateResidualBlock(desc, batchSize, nnXLen, nnYLen, inputBuffer, maskBuffer, outputBuffer);
 }
 
@@ -1195,7 +1278,9 @@ bool NeuralNet::testEvaluateGlobalPoolingResidualBlock(
   vector<float>& outputBuffer) {
 
   (void)useFP16;
-  (void)useNHWC;
+  // Metal backend only supports NCHW format
+  if(useNHWC)
+    return false;
   return MetalProcess::testEvaluateGlobalPoolingResidualBlock(desc, batchSize, nnXLen, nnYLen, inputBuffer, maskBuffer, outputBuffer);
 }
 

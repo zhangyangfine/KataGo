@@ -905,6 +905,7 @@ public func testConvLayer(
     output: UnsafeMutablePointer<Float32>
 ) {
     guard let device = MTLCreateSystemDefaultDevice() else {
+        printError("testConvLayer: No Metal device found")
         return
     }
 
@@ -1002,13 +1003,11 @@ public func testBatchNormLayer(
               let maskBuffer = device.makeBuffer(bytes: mask, length: maskSize, options: .storageModeShared),
               let scaleBuffer = device.makeBuffer(bytes: descriptor.mergedScale, length: scaleSize, options: .storageModeShared),
               let biasBuffer = device.makeBuffer(bytes: descriptor.mergedBias, length: scaleSize, options: .storageModeShared),
-              let outputBuffer = device.makeBuffer(length: inputSize, options: .storageModeShared),
-              let commandBuffer = pipelineManager.makeCommandBuffer(),
-              let encoder = commandBuffer.makeComputeCommandEncoder() else {
+              let outputBuffer = device.makeBuffer(length: inputSize, options: .storageModeShared) else {
             return
         }
 
-        // Add buffers to residency set and commit (required for Metal 4)
+        // Add buffers to residency set and commit BEFORE creating command buffer (required for Metal 4)
         pipelineManager.addToResidencySet(inputBuffer)
         pipelineManager.addToResidencySet(maskBuffer)
         pipelineManager.addToResidencySet(scaleBuffer)
@@ -1016,6 +1015,11 @@ public func testBatchNormLayer(
         pipelineManager.addToResidencySet(outputBuffer)
         pipelineManager.addToResidencySet(pipelineManager.constantsBuffer)
         pipelineManager.commitResidency()
+
+        guard let commandBuffer = pipelineManager.makeCommandBuffer(),
+              let encoder = commandBuffer.makeComputeCommandEncoder() else {
+            return
+        }
 
         // Reset constants offset for this command buffer
         dispatcher.resetConstantsOffset()
@@ -1052,8 +1056,156 @@ public func testResidualBlock(
     mask: UnsafeMutablePointer<Float32>,
     output: UnsafeMutablePointer<Float32>
 ) {
-    // TODO: Implement residual block test with Metal 4
-    printError("testResidualBlock not yet implemented for Metal 4")
+    guard let device = MTLCreateSystemDefaultDevice() else { return }
+
+    do {
+        let pipelineManager = try MetalPipelineManager(device: device)
+        let dispatcher = MetalComputeDispatcher(pipelineManager: pipelineManager)
+
+        let batch = Int(batchSize)
+        let height = Int(nnYLen)
+        let width = Int(nnXLen)
+
+        // Extract channel counts from descriptors
+        let trunkChannels = descriptor.preBN.numChannels.intValue
+        let midChannels = descriptor.regularConv.outChannels.intValue
+
+        // Calculate buffer sizes
+        let trunkSize = batch * trunkChannels * height * width * 4
+        let midSize = batch * midChannels * height * width * 4
+        let maskSize = batch * height * width * 4
+        let preBNScaleSize = trunkChannels * 4
+        let midBNScaleSize = midChannels * 4
+        let regularConvWeightSize = midChannels * trunkChannels * descriptor.regularConv.convYSize.intValue * descriptor.regularConv.convXSize.intValue * 4
+        let finalConvWeightSize = trunkChannels * midChannels * descriptor.finalConv.convYSize.intValue * descriptor.finalConv.convXSize.intValue * 4
+
+        // Create buffers
+        guard let inputBuffer = device.makeBuffer(bytes: input, length: trunkSize, options: .storageModeShared),
+              let maskBuffer = device.makeBuffer(bytes: mask, length: maskSize, options: .storageModeShared),
+              let outputBuffer = device.makeBuffer(length: trunkSize, options: .storageModeShared),
+              let bnOutBuffer = device.makeBuffer(length: max(trunkSize, midSize), options: .storageModeShared),
+              let convOutBuffer = device.makeBuffer(length: max(trunkSize, midSize), options: .storageModeShared),
+              let preBNScaleBuffer = device.makeBuffer(bytes: descriptor.preBN.mergedScale, length: preBNScaleSize, options: .storageModeShared),
+              let preBNBiasBuffer = device.makeBuffer(bytes: descriptor.preBN.mergedBias, length: preBNScaleSize, options: .storageModeShared),
+              let regularConvWeightBuffer = device.makeBuffer(bytes: descriptor.regularConv.weights, length: regularConvWeightSize, options: .storageModeShared),
+              let midBNScaleBuffer = device.makeBuffer(bytes: descriptor.midBN.mergedScale, length: midBNScaleSize, options: .storageModeShared),
+              let midBNBiasBuffer = device.makeBuffer(bytes: descriptor.midBN.mergedBias, length: midBNScaleSize, options: .storageModeShared),
+              let finalConvWeightBuffer = device.makeBuffer(bytes: descriptor.finalConv.weights, length: finalConvWeightSize, options: .storageModeShared) else {
+            printError("testResidualBlock: Failed to create buffers")
+            return
+        }
+
+        // Add buffers to residency set
+        pipelineManager.addToResidencySet(inputBuffer)
+        pipelineManager.addToResidencySet(maskBuffer)
+        pipelineManager.addToResidencySet(outputBuffer)
+        pipelineManager.addToResidencySet(bnOutBuffer)
+        pipelineManager.addToResidencySet(convOutBuffer)
+        pipelineManager.addToResidencySet(preBNScaleBuffer)
+        pipelineManager.addToResidencySet(preBNBiasBuffer)
+        pipelineManager.addToResidencySet(regularConvWeightBuffer)
+        pipelineManager.addToResidencySet(midBNScaleBuffer)
+        pipelineManager.addToResidencySet(midBNBiasBuffer)
+        pipelineManager.addToResidencySet(finalConvWeightBuffer)
+        pipelineManager.addToResidencySet(pipelineManager.constantsBuffer)
+        pipelineManager.commitResidency()
+
+        guard let commandBuffer = pipelineManager.makeCommandBuffer(),
+              let encoder = commandBuffer.makeComputeCommandEncoder() else {
+            printError("testResidualBlock: Failed to create command buffer or encoder")
+            return
+        }
+
+        dispatcher.resetConstantsOffset()
+
+        // Pre BN + activation: input -> bnOut
+        dispatcher.dispatchBatchNorm(
+            encoder: encoder,
+            input: inputBuffer,
+            scale: preBNScaleBuffer,
+            bias: preBNBiasBuffer,
+            mask: maskBuffer,
+            output: bnOutBuffer,
+            batchSize: batch,
+            channels: trunkChannels,
+            height: height,
+            width: width,
+            activation: descriptor.preActivation)
+
+        // Barrier to ensure preBN completes before regularConv reads
+        dispatcher.insertBarrier(encoder: encoder)
+
+        // Regular conv: bnOut -> convOut
+        dispatcher.dispatchConv2D(
+            encoder: encoder,
+            input: bnOutBuffer,
+            weights: regularConvWeightBuffer,
+            output: convOutBuffer,
+            batchSize: batch,
+            inChannels: trunkChannels,
+            outChannels: midChannels,
+            height: height,
+            width: width,
+            kernelH: descriptor.regularConv.convYSize.intValue,
+            kernelW: descriptor.regularConv.convXSize.intValue,
+            dilationH: descriptor.regularConv.dilationY,
+            dilationW: descriptor.regularConv.dilationX)
+
+        // Barrier to ensure regularConv completes before midBN reads
+        dispatcher.insertBarrier(encoder: encoder)
+
+        // Mid BN + activation: convOut -> bnOut
+        dispatcher.dispatchBatchNorm(
+            encoder: encoder,
+            input: convOutBuffer,
+            scale: midBNScaleBuffer,
+            bias: midBNBiasBuffer,
+            mask: maskBuffer,
+            output: bnOutBuffer,
+            batchSize: batch,
+            channels: midChannels,
+            height: height,
+            width: width,
+            activation: descriptor.midActivation)
+
+        // Barrier to ensure midBN completes before finalConv reads
+        dispatcher.insertBarrier(encoder: encoder)
+
+        // Final conv: bnOut -> convOut
+        dispatcher.dispatchConv2D(
+            encoder: encoder,
+            input: bnOutBuffer,
+            weights: finalConvWeightBuffer,
+            output: convOutBuffer,
+            batchSize: batch,
+            inChannels: midChannels,
+            outChannels: trunkChannels,
+            height: height,
+            width: width,
+            kernelH: descriptor.finalConv.convYSize.intValue,
+            kernelW: descriptor.finalConv.convXSize.intValue,
+            dilationH: descriptor.finalConv.dilationY,
+            dilationW: descriptor.finalConv.dilationX)
+
+        // Barrier to ensure finalConv completes before residual add reads
+        dispatcher.insertBarrier(encoder: encoder)
+
+        // Residual add: input + convOut -> output
+        dispatcher.dispatchElementwiseAdd(
+            encoder: encoder,
+            a: inputBuffer,
+            b: convOutBuffer,
+            output: outputBuffer,
+            size: batch * trunkChannels * height * width)
+
+        encoder.endEncoding()
+        pipelineManager.submit(commandBuffer)
+        pipelineManager.waitForCompletion()
+
+        memcpy(output, outputBuffer.contents(), trunkSize)
+    } catch {
+        printError("testResidualBlock failed: \(error)")
+    }
 }
 
 public func testGlobalPoolingResidualBlock(
@@ -1065,6 +1217,271 @@ public func testGlobalPoolingResidualBlock(
     mask: UnsafeMutablePointer<Float32>,
     output: UnsafeMutablePointer<Float32>
 ) {
-    // TODO: Implement global pooling residual block test with Metal 4
-    printError("testGlobalPoolingResidualBlock not yet implemented for Metal 4")
+    guard let device = MTLCreateSystemDefaultDevice() else { return }
+
+    do {
+        let pipelineManager = try MetalPipelineManager(device: device)
+        let dispatcher = MetalComputeDispatcher(pipelineManager: pipelineManager)
+
+        let batch = Int(batchSize)
+        let height = Int(nnYLen)
+        let width = Int(nnXLen)
+
+        // Extract channel counts from descriptors
+        let trunkChannels = descriptor.preBN.numChannels.intValue
+        let regularConvOutChannels = descriptor.regularConv.outChannels.intValue
+        let gpoolConvOutChannels = descriptor.gpoolConv.outChannels.intValue
+        let gpoolToBiasInChannels = descriptor.gpoolToBiasMul.inChannels.intValue
+        let gpoolToBiasOutChannels = descriptor.gpoolToBiasMul.outChannels.intValue
+        let midChannels = descriptor.midBN.numChannels.intValue
+
+        // Calculate buffer sizes
+        let trunkSize = batch * trunkChannels * height * width * 4
+        let regularConvOutSize = batch * regularConvOutChannels * height * width * 4
+        let gpoolConvOutSize = batch * gpoolConvOutChannels * height * width * 4
+        let gpoolOutSize = batch * gpoolToBiasInChannels * 4  // global pooling output (3 values per channel)
+        let matmulOutSize = batch * gpoolToBiasOutChannels * 4
+        let midSize = batch * midChannels * height * width * 4
+        let maskSize = batch * height * width * 4
+        let maskSumSize = batch * 4
+
+        // Weight buffer sizes
+        let preBNScaleSize = trunkChannels * 4
+        let regularConvWeightSize = regularConvOutChannels * trunkChannels * descriptor.regularConv.convYSize.intValue * descriptor.regularConv.convXSize.intValue * 4
+        let gpoolConvWeightSize = gpoolConvOutChannels * trunkChannels * descriptor.gpoolConv.convYSize.intValue * descriptor.gpoolConv.convXSize.intValue * 4
+        let gpoolBNScaleSize = gpoolConvOutChannels * 4
+        let gpoolToBiasMulWeightSize = gpoolToBiasInChannels * gpoolToBiasOutChannels * 4
+        let midBNScaleSize = midChannels * 4
+        let finalConvWeightSize = trunkChannels * midChannels * descriptor.finalConv.convYSize.intValue * descriptor.finalConv.convXSize.intValue * 4
+
+        // Create buffers
+        guard let inputBuffer = device.makeBuffer(bytes: input, length: trunkSize, options: .storageModeShared),
+              let maskBuffer = device.makeBuffer(bytes: mask, length: maskSize, options: .storageModeShared),
+              let outputBuffer = device.makeBuffer(length: trunkSize, options: .storageModeShared),
+              let bnOutBuffer = device.makeBuffer(length: max(trunkSize, regularConvOutSize, gpoolConvOutSize), options: .storageModeShared),
+              let convOutBuffer = device.makeBuffer(length: max(trunkSize, regularConvOutSize, midSize), options: .storageModeShared),
+              let gpoolConvOutBuffer = device.makeBuffer(length: gpoolConvOutSize, options: .storageModeShared),
+              let gpoolOutBuffer = device.makeBuffer(length: gpoolOutSize, options: .storageModeShared),
+              let matmulOutBuffer = device.makeBuffer(length: matmulOutSize, options: .storageModeShared),
+              let maskSumBuffer = device.makeBuffer(length: maskSumSize, options: .storageModeShared),
+              let maskSumSqrtS14M01Buffer = device.makeBuffer(length: maskSumSize, options: .storageModeShared),
+              let preBNScaleBuffer = device.makeBuffer(bytes: descriptor.preBN.mergedScale, length: preBNScaleSize, options: .storageModeShared),
+              let preBNBiasBuffer = device.makeBuffer(bytes: descriptor.preBN.mergedBias, length: preBNScaleSize, options: .storageModeShared),
+              let regularConvWeightBuffer = device.makeBuffer(bytes: descriptor.regularConv.weights, length: regularConvWeightSize, options: .storageModeShared),
+              let gpoolConvWeightBuffer = device.makeBuffer(bytes: descriptor.gpoolConv.weights, length: gpoolConvWeightSize, options: .storageModeShared),
+              let gpoolBNScaleBuffer = device.makeBuffer(bytes: descriptor.gpoolBN.mergedScale, length: gpoolBNScaleSize, options: .storageModeShared),
+              let gpoolBNBiasBuffer = device.makeBuffer(bytes: descriptor.gpoolBN.mergedBias, length: gpoolBNScaleSize, options: .storageModeShared),
+              let gpoolToBiasMulWeightBuffer = device.makeBuffer(bytes: descriptor.gpoolToBiasMul.weights, length: gpoolToBiasMulWeightSize, options: .storageModeShared),
+              let midBNScaleBuffer = device.makeBuffer(bytes: descriptor.midBN.mergedScale, length: midBNScaleSize, options: .storageModeShared),
+              let midBNBiasBuffer = device.makeBuffer(bytes: descriptor.midBN.mergedBias, length: midBNScaleSize, options: .storageModeShared),
+              let finalConvWeightBuffer = device.makeBuffer(bytes: descriptor.finalConv.weights, length: finalConvWeightSize, options: .storageModeShared) else {
+            printError("testGlobalPoolingResidualBlock: Failed to create buffers")
+            return
+        }
+
+        // Add buffers to residency set
+        pipelineManager.addToResidencySet(inputBuffer)
+        pipelineManager.addToResidencySet(maskBuffer)
+        pipelineManager.addToResidencySet(outputBuffer)
+        pipelineManager.addToResidencySet(bnOutBuffer)
+        pipelineManager.addToResidencySet(convOutBuffer)
+        pipelineManager.addToResidencySet(gpoolConvOutBuffer)
+        pipelineManager.addToResidencySet(gpoolOutBuffer)
+        pipelineManager.addToResidencySet(matmulOutBuffer)
+        pipelineManager.addToResidencySet(maskSumBuffer)
+        pipelineManager.addToResidencySet(maskSumSqrtS14M01Buffer)
+        pipelineManager.addToResidencySet(preBNScaleBuffer)
+        pipelineManager.addToResidencySet(preBNBiasBuffer)
+        pipelineManager.addToResidencySet(regularConvWeightBuffer)
+        pipelineManager.addToResidencySet(gpoolConvWeightBuffer)
+        pipelineManager.addToResidencySet(gpoolBNScaleBuffer)
+        pipelineManager.addToResidencySet(gpoolBNBiasBuffer)
+        pipelineManager.addToResidencySet(gpoolToBiasMulWeightBuffer)
+        pipelineManager.addToResidencySet(midBNScaleBuffer)
+        pipelineManager.addToResidencySet(midBNBiasBuffer)
+        pipelineManager.addToResidencySet(finalConvWeightBuffer)
+        pipelineManager.addToResidencySet(pipelineManager.constantsBuffer)
+        pipelineManager.commitResidency()
+
+        guard let commandBuffer = pipelineManager.makeCommandBuffer(),
+              let encoder = commandBuffer.makeComputeCommandEncoder() else {
+            printError("testGlobalPoolingResidualBlock: Failed to create command buffer or encoder")
+            return
+        }
+
+        dispatcher.resetConstantsOffset()
+
+        // Compute mask sum and transformed mask sum
+        dispatcher.dispatchMaskSum(encoder: encoder, mask: maskBuffer, maskSum: maskSumBuffer, batchSize: batch, height: height, width: width)
+
+        // Barrier: maskSum must complete before maskSumSqrtS14M01
+        dispatcher.insertBarrier(encoder: encoder)
+
+        dispatcher.dispatchMaskSumSqrtS14M01(encoder: encoder, maskSum: maskSumBuffer, output: maskSumSqrtS14M01Buffer, batchSize: batch)
+
+        // Pre BN + activation: input -> bnOut
+        dispatcher.dispatchBatchNorm(
+            encoder: encoder,
+            input: inputBuffer,
+            scale: preBNScaleBuffer,
+            bias: preBNBiasBuffer,
+            mask: maskBuffer,
+            output: bnOutBuffer,
+            batchSize: batch,
+            channels: trunkChannels,
+            height: height,
+            width: width,
+            activation: descriptor.preActivation)
+
+        // Barrier: preBN must complete before regularConv and gpoolConv
+        dispatcher.insertBarrier(encoder: encoder)
+
+        // Regular conv: bnOut -> convOut
+        dispatcher.dispatchConv2D(
+            encoder: encoder,
+            input: bnOutBuffer,
+            weights: regularConvWeightBuffer,
+            output: convOutBuffer,
+            batchSize: batch,
+            inChannels: trunkChannels,
+            outChannels: regularConvOutChannels,
+            height: height,
+            width: width,
+            kernelH: descriptor.regularConv.convYSize.intValue,
+            kernelW: descriptor.regularConv.convXSize.intValue,
+            dilationH: descriptor.regularConv.dilationY,
+            dilationW: descriptor.regularConv.dilationX)
+
+        // Global pooling branch
+        // Gpool conv: bnOut -> gpoolConvOut
+        dispatcher.dispatchConv2D(
+            encoder: encoder,
+            input: bnOutBuffer,
+            weights: gpoolConvWeightBuffer,
+            output: gpoolConvOutBuffer,
+            batchSize: batch,
+            inChannels: trunkChannels,
+            outChannels: gpoolConvOutChannels,
+            height: height,
+            width: width,
+            kernelH: descriptor.gpoolConv.convYSize.intValue,
+            kernelW: descriptor.gpoolConv.convXSize.intValue,
+            dilationH: descriptor.gpoolConv.dilationY,
+            dilationW: descriptor.gpoolConv.dilationX)
+
+        // Barrier: gpoolConv must complete before gpoolBN
+        dispatcher.insertBarrier(encoder: encoder)
+
+        // Gpool BN + activation: gpoolConvOut -> gpoolConvOut (in-place)
+        dispatcher.dispatchBatchNorm(
+            encoder: encoder,
+            input: gpoolConvOutBuffer,
+            scale: gpoolBNScaleBuffer,
+            bias: gpoolBNBiasBuffer,
+            mask: maskBuffer,
+            output: gpoolConvOutBuffer,
+            batchSize: batch,
+            channels: gpoolConvOutChannels,
+            height: height,
+            width: width,
+            activation: descriptor.gpoolActivation)
+
+        // Barrier: gpoolBN and maskSumSqrtS14M01 must complete before globalPooling
+        dispatcher.insertBarrier(encoder: encoder)
+
+        // Global pooling: gpoolConvOut -> gpoolOut
+        dispatcher.dispatchGlobalPooling(
+            encoder: encoder,
+            input: gpoolConvOutBuffer,
+            mask: maskBuffer,
+            maskSum: maskSumBuffer,
+            maskSumSqrtS14M01: maskSumSqrtS14M01Buffer,
+            output: gpoolOutBuffer,
+            batchSize: batch,
+            channels: gpoolConvOutChannels,
+            height: height,
+            width: width)
+
+        // Barrier: globalPooling must complete before matmul
+        dispatcher.insertBarrier(encoder: encoder)
+
+        // Gpool to bias matmul: gpoolOut -> matmulOut
+        dispatcher.dispatchMatMul(
+            encoder: encoder,
+            A: gpoolOutBuffer,
+            B: gpoolToBiasMulWeightBuffer,
+            C: matmulOutBuffer,
+            M: batch,
+            K: gpoolToBiasInChannels,
+            N: gpoolToBiasOutChannels)
+
+        // Barrier: matmul and regularConv must complete before addNCBias
+        dispatcher.insertBarrier(encoder: encoder)
+
+        // Add bias to regular conv output: convOut + matmulOut -> convOut
+        dispatcher.dispatchAddNCBias(
+            encoder: encoder,
+            input: convOutBuffer,
+            bias: matmulOutBuffer,
+            output: convOutBuffer,
+            batchSize: batch,
+            channels: gpoolToBiasOutChannels,
+            height: height,
+            width: width)
+
+        // Barrier: addNCBias must complete before midBN
+        dispatcher.insertBarrier(encoder: encoder)
+
+        // Mid BN + activation: convOut -> bnOut
+        dispatcher.dispatchBatchNorm(
+            encoder: encoder,
+            input: convOutBuffer,
+            scale: midBNScaleBuffer,
+            bias: midBNBiasBuffer,
+            mask: maskBuffer,
+            output: bnOutBuffer,
+            batchSize: batch,
+            channels: midChannels,
+            height: height,
+            width: width,
+            activation: descriptor.midActivation)
+
+        // Barrier: midBN must complete before finalConv
+        dispatcher.insertBarrier(encoder: encoder)
+
+        // Final conv: bnOut -> convOut
+        dispatcher.dispatchConv2D(
+            encoder: encoder,
+            input: bnOutBuffer,
+            weights: finalConvWeightBuffer,
+            output: convOutBuffer,
+            batchSize: batch,
+            inChannels: midChannels,
+            outChannels: trunkChannels,
+            height: height,
+            width: width,
+            kernelH: descriptor.finalConv.convYSize.intValue,
+            kernelW: descriptor.finalConv.convXSize.intValue,
+            dilationH: descriptor.finalConv.dilationY,
+            dilationW: descriptor.finalConv.dilationX)
+
+        // Barrier: finalConv must complete before residualAdd
+        dispatcher.insertBarrier(encoder: encoder)
+
+        // Residual add: input + convOut -> output
+        dispatcher.dispatchElementwiseAdd(
+            encoder: encoder,
+            a: inputBuffer,
+            b: convOutBuffer,
+            output: outputBuffer,
+            size: batch * trunkChannels * height * width)
+
+        encoder.endEncoding()
+        pipelineManager.submit(commandBuffer)
+        pipelineManager.waitForCompletion()
+
+        memcpy(output, outputBuffer.contents(), trunkSize)
+    } catch {
+        printError("testGlobalPoolingResidualBlock failed: \(error)")
+    }
 }
