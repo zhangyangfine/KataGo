@@ -649,6 +649,10 @@ InputBuffers::InputBuffers(const LoadedModel* loadedModel, int maxBatchSz, int n
   maxBatchSize = maxBatchSz;
   policyResultChannels = m.policyHead.p2Conv.outChannels;
 
+  // DEBUG: Print model info
+  fprintf(stderr, "DEBUG InputBuffers: modelVersion=%d p2Conv.outChannels=%d policyResultChannels=%d\n",
+          m.modelVersion, m.policyHead.p2Conv.outChannels, policyResultChannels);
+
   assert(((m.modelVersion < 16) || (policyResultChannels == 4)) &&
          ((m.modelVersion >= 16) || (m.modelVersion < 12) || (policyResultChannels == 2)) &&
          ((m.modelVersion >= 12) || (policyResultChannels == 1)));
@@ -1037,6 +1041,49 @@ void MetalProcess::getMetalOutput(
                           inputBuffers->scoreValuesResults,
                           inputBuffers->ownershipResults,
                           batchSize);
+
+  // DEBUG: Check input buffer values before GPU execution
+  fprintf(stderr, "DEBUG: userInput[0..4]: %.6f %.6f %.6f %.6f %.6f, inputGlobal[0..4]: %.6f %.6f %.6f %.6f %.6f\n",
+          inputBuffers->userInputBuffer[0],
+          inputBuffers->userInputBuffer[1],
+          inputBuffers->userInputBuffer[2],
+          inputBuffers->userInputBuffer[3],
+          inputBuffers->userInputBuffer[4],
+          inputBuffers->userInputGlobalBuffer[0],
+          inputBuffers->userInputGlobalBuffer[1],
+          inputBuffers->userInputGlobalBuffer[2],
+          inputBuffers->userInputGlobalBuffer[3],
+          inputBuffers->userInputGlobalBuffer[4]);
+
+  // DEBUG: Check for NaN/Inf in policy results
+  bool foundBadPolicy = false;
+  for(size_t i = 0; i < batchSize * inputBuffers->singlePolicyResultElts; i++) {
+    if(!std::isfinite(inputBuffers->policyResults[i])) {
+      if(!foundBadPolicy) {
+        fprintf(stderr, "DEBUG: Found NaN/Inf in policyResults at index %zu, batchSize=%d\n", i, batchSize);
+        foundBadPolicy = true;
+      }
+    }
+  }
+  for(size_t i = 0; i < batchSize * inputBuffers->policyResultChannels; i++) {
+    if(!std::isfinite(inputBuffers->policyPassResults[i])) {
+      fprintf(stderr, "DEBUG: Found NaN/Inf in policyPassResults at index %zu\n", i);
+    }
+  }
+  // Print first few policy and value values for debugging
+  if(batchSize > 0) {
+    fprintf(stderr, "DEBUG: batchSize=%d, policy[0..4]: %.6f %.6f %.6f %.6f %.6f, pass[0]: %.6f, value[0..2]: %.6f %.6f %.6f\n",
+            batchSize,
+            inputBuffers->policyResults[0],
+            inputBuffers->policyResults[1],
+            inputBuffers->policyResults[2],
+            inputBuffers->policyResults[3],
+            inputBuffers->policyResults[4],
+            inputBuffers->policyPassResults[0],
+            inputBuffers->valueResults[0],
+            inputBuffers->valueResults[1],
+            inputBuffers->valueResults[2]);
+  }
 
   for(size_t row = 0; row < batchSize; row++) {
     MetalProcess::processRow(row, gpuHandle, inputBuffers, inputBufs, outputs);

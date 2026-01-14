@@ -582,41 +582,26 @@ kernel void reduction_max_hw_masked(
 // =============================================================================
 
 // Compute mask sum over HW dimensions
+// Simple version - single thread computes entire sum (for small batch sizes)
 kernel void mask_sum(
     device const float* mask [[buffer(0)]],
     device float* maskSum [[buffer(1)]],
     constant int& batchSize [[buffer(2)]],
     constant int& height [[buffer(3)]],
     constant int& width [[buffer(4)]],
-    threadgroup float* sharedData [[threadgroup(0)]],
-    uint tgid [[threadgroup_position_in_grid]],
-    uint tid [[thread_index_in_threadgroup]],
-    uint tgSize [[threads_per_threadgroup]])
+    uint gid [[thread_position_in_grid]])
 {
-    int b = tgid;  // Each threadgroup handles one batch element
+    int b = gid;
     if (b >= batchSize) return;
 
     int hw = height * width;
     int baseIdx = b * hw;
 
     float sum = 0.0f;
-    for (int i = tid; i < hw; i += tgSize) {
+    for (int i = 0; i < hw; i++) {
         sum += mask[baseIdx + i];
     }
-
-    sharedData[tid] = sum;
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-
-    for (uint stride = tgSize / 2; stride > 0; stride >>= 1) {
-        if (tid < stride) {
-            sharedData[tid] += sharedData[tid + stride];
-        }
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-    }
-
-    if (tid == 0) {
-        maskSum[b] = sharedData[0];
-    }
+    maskSum[b] = sum;
 }
 
 // Compute (sqrt(maskSum) - 14) * 0.1

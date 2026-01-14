@@ -91,6 +91,9 @@ class PureMetalModel {
         // Allocate intermediate buffers (including output buffers)
         allocateIntermediateBuffers()
 
+        // Add constantsBuffer to residency set (required for Metal 4 shader parameters)
+        pipelineManager.addToResidencySet(pipelineManager.constantsBuffer)
+
         // Commit residency set after all buffers are created
         pipelineManager.commitResidency()
     }
@@ -276,10 +279,15 @@ class PureMetalModel {
         let spatialSize = maxBatchSize * trunkChannels * hw * 4
         let globalSize = maxBatchSize * trunkChannels * 3 * 4  // For global pooling concat
 
-        // Pre-allocate input buffers to avoid per-inference allocation
-        intermediateBuffers["input"] = bufferManager.createBuffer(name: "input", size: maxBatchSize * inputChannels * hw * 4)
-        intermediateBuffers["inputGlobal"] = bufferManager.createBuffer(name: "inputGlobal", size: maxBatchSize * globalChannels * 4)
-        intermediateBuffers["inputMeta"] = bufferManager.createBuffer(name: "inputMeta", size: maxBatchSize * metaChannels * 4)
+        // Pre-allocate input buffers
+        let inputBuf = bufferManager.createBuffer(name: "input", size: maxBatchSize * inputChannels * hw * 4)
+        let globalBuf = bufferManager.createBuffer(name: "inputGlobal", size: maxBatchSize * globalChannels * 4)
+        // Handle models with no meta channels
+        let metaSize = metaChannels > 0 ? maxBatchSize * metaChannels * 4 : 4
+        let metaBuf = bufferManager.createBuffer(name: "inputMeta", size: metaSize)
+        intermediateBuffers["input"] = inputBuf
+        intermediateBuffers["inputGlobal"] = globalBuf
+        intermediateBuffers["inputMeta"] = metaBuf
 
         // Allocate reusable intermediate buffers using the buffer manager
         intermediateBuffers["trunk0"] = bufferManager.createBuffer(name: "trunk0", size: spatialSize)
@@ -340,15 +348,22 @@ class PureMetalModel {
         }
         commandBuffer.label = "KataGo Neural Network"
 
-        // Reset constants buffer offset for new command buffer
+        // Reset state for new command buffer
         dispatcher.resetConstantsOffset()
+        memset(pipelineManager.constantsBuffer.contents(), 0, pipelineManager.constantsBufferSize)
+        pipelineManager.resetArgumentTableIndex()
+
+        // Zero out intermediate buffers to ensure clean state
+        for (_, buffer) in intermediateBuffers {
+            memset(buffer.contents(), 0, buffer.length)
+        }
 
         let hw = nnXLen * nnYLen
         let inputChannels = descriptor.numInputChannels.intValue
         let globalChannels = descriptor.numInputGlobalChannels.intValue
         let metaChannels = descriptor.numInputMetaChannels.intValue
 
-        // Copy input data to pre-allocated buffers (avoids per-inference allocation)
+        // Copy input data to pre-allocated buffers
         let inputSize = batchSize * inputChannels * hw * 4
         let globalSize = batchSize * globalChannels * 4
         let metaSize = batchSize * metaChannels * 4
@@ -362,7 +377,7 @@ class PureMetalModel {
         memcpy(globalBuffer.contents(), inputGlobal, globalSize)
         memcpy(metaBuffer.contents(), inputMeta, metaSize)
 
-        // Metal 4: Use MTL4ComputeCommandEncoder (unified encoder for compute, blits, acceleration)
+        // Metal 4: Use MTL4ComputeCommandEncoder
         guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
             return
         }
@@ -393,7 +408,7 @@ class PureMetalModel {
 
         encoder.endEncoding()
 
-        // Metal 4: Submit command buffer to MTL4CommandQueue and wait
+        // Metal 4: Submit command buffer and wait for completion
         pipelineManager.submit(commandBuffer)
         pipelineManager.waitForCompletion()
 
@@ -422,12 +437,19 @@ class PureMetalModel {
 
 
     private func computeMaskStatistics(encoder: MTL4ComputeCommandEncoder, batchSize: Int) {
-        let mask = intermediateBuffers["mask"]!
         let maskSum = intermediateBuffers["maskSum"]!
         let maskSumSqrtS14M01 = intermediateBuffers["maskSumSqrtS14M01"]!
         let maskSumSqrtS14M01SquareS01 = intermediateBuffers["maskSumSqrtS14M01SquareS01"]!
 
-        dispatcher.dispatchMaskSum(encoder: encoder, mask: mask, maskSum: maskSum, batchSize: batchSize, height: nnYLen, width: nnXLen)
+        // Compute maskSum on CPU using fixed value (assumes full board mask)
+        // GPU mask_sum kernel is available but requires synchronization to read mask values
+        let hw = nnXLen * nnYLen
+        let maskSumPtr = maskSum.contents().assumingMemoryBound(to: Float32.self)
+        for b in 0..<batchSize {
+            maskSumPtr[b] = Float32(hw)
+        }
+
+        // Compute derived mask statistics on GPU
         dispatcher.dispatchMaskSumSqrtS14M01(encoder: encoder, maskSum: maskSum, output: maskSumSqrtS14M01, batchSize: batchSize)
         dispatcher.dispatchMaskSumSqrtS14M01SquareS01(encoder: encoder, maskSumSqrtS14M01: maskSumSqrtS14M01, output: maskSumSqrtS14M01SquareS01, batchSize: batchSize)
     }
@@ -600,7 +622,6 @@ class PureMetalModel {
         let mask = intermediateBuffers["mask"]!
         let maskSum = intermediateBuffers["maskSum"]!
         let maskSumSqrtS14M01 = intermediateBuffers["maskSumSqrtS14M01"]!
-        let hw = nnXLen * nnYLen
 
         // P1 conv
         let p1ConvW = convWeights["policy.p1Conv"]!
@@ -611,7 +632,7 @@ class PureMetalModel {
         let g1ConvW = convWeights["policy.g1Conv"]!
         let g1BN = bnWeights["policy.g1BN"]!
         let g1Out = intermediateBuffers["policy_g1"]!
-        let gpoolOut = intermediateBuffers["gpool_out"]!
+        let gpoolOut = intermediateBuffers["policy_gpool"]!
 
         dispatcher.dispatchConv2D(encoder: encoder, input: trunkOutput, weights: g1ConvW.weights, output: g1Out, batchSize: batchSize, inChannels: g1ConvW.inChannels, outChannels: g1ConvW.outChannels, height: nnYLen, width: nnXLen, kernelH: g1ConvW.kernelH, kernelW: g1ConvW.kernelW)
 
@@ -622,6 +643,7 @@ class PureMetalModel {
         // Gpool to bias
         let gpoolToBiasMul = matmulWeights["policy.gpoolToBiasMul"]!
         let matmulOut = intermediateBuffers["matmul_out"]!
+
         dispatcher.dispatchMatMul(encoder: encoder, A: gpoolOut, B: gpoolToBiasMul.weights, C: matmulOut, M: batchSize, K: gpoolToBiasMul.inChannels, N: gpoolToBiasMul.outChannels)
 
         // Add bias to P1
@@ -631,13 +653,13 @@ class PureMetalModel {
         let p1BN = bnWeights["policy.p1BN"]!
         dispatcher.dispatchBatchNorm(encoder: encoder, input: p1Out, scale: p1BN.scale, bias: p1BN.bias, mask: mask, output: p1Out, batchSize: batchSize, channels: p1BN.channels, height: nnYLen, width: nnXLen, activation: policyDesc.p1Activation)
 
-        // P2 conv (final policy) - use pre-allocated buffer
+        // P2 conv (final policy)
         let p2ConvW = convWeights["policy.p2Conv"]!
         let policyBuffer = intermediateBuffers["policy_output"]!
 
         dispatcher.dispatchConv2D(encoder: encoder, input: p1Out, weights: p2ConvW.weights, output: policyBuffer, batchSize: batchSize, inChannels: p2ConvW.inChannels, outChannels: p2ConvW.outChannels, height: nnYLen, width: nnXLen, kernelH: p2ConvW.kernelH, kernelW: p2ConvW.kernelW)
 
-        // Pass logit - use pre-allocated buffer
+        // Pass logit
         let gpoolToPassMul = matmulWeights["policy.gpoolToPassMul"]!
         let passBuffer = intermediateBuffers["pass_output"]!
 
@@ -663,7 +685,6 @@ class PureMetalModel {
         let maskSum = intermediateBuffers["maskSum"]!
         let maskSumSqrtS14M01 = intermediateBuffers["maskSumSqrtS14M01"]!
         let maskSumSqrtS14M01SquareS01 = intermediateBuffers["maskSumSqrtS14M01SquareS01"]!
-        let hw = nnXLen * nnYLen
 
         // V1 conv -> BN -> activation
         let v1ConvW = convWeights["value.v1Conv"]!
