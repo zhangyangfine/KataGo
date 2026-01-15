@@ -32,7 +32,7 @@ endif()
 set(BUILD_DISTRIBUTED 0 CACHE BOOL "Build with http support for contributing to distributed training")
 set(USE_BACKEND CACHE STRING "Neural net backend")
 string(TOUPPER "${USE_BACKEND}" USE_BACKEND)
-set_property(CACHE USE_BACKEND PROPERTY STRINGS "" CUDA TENSORRT OPENCL EIGEN)
+set_property(CACHE USE_BACKEND PROPERTY STRINGS "" CUDA TENSORRT OPENCL EIGEN MLX METAL)
 
 set(USE_TCMALLOC 0 CACHE BOOL "Use TCMalloc")
 set(NO_GIT_REVISION 0 CACHE BOOL "Disable embedding the git revision into the compiled exe")
@@ -139,6 +139,30 @@ elseif(USE_BACKEND STREQUAL "EIGEN")
   endif()
   set(NEURALNET_BACKEND_SOURCES
     neuralnet/eigenbackend.cpp
+    )
+elseif(USE_BACKEND STREQUAL "MLX")
+  message(STATUS "-DUSE_BACKEND=MLX, using MLX backend for Apple Silicon.")
+
+  # MLX requires C++17 (already set) and CMake 3.27+
+  cmake_minimum_required(VERSION 3.27)
+
+  # Find MLX via Python or MLX_ROOT
+  if(NOT DEFINED MLX_ROOT)
+    find_package(Python 3.9 COMPONENTS Interpreter)
+    if(Python_FOUND)
+      execute_process(
+        COMMAND "${Python_EXECUTABLE}" -m mlx --cmake-dir
+        OUTPUT_VARIABLE MLX_ROOT
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+      )
+    endif()
+  endif()
+
+  find_package(MLX CONFIG REQUIRED HINTS ${MLX_ROOT})
+
+  set(NEURALNET_BACKEND_SOURCES
+    neuralnet/mlxbackend.cpp
     )
 elseif(USE_BACKEND STREQUAL "")
   message(WARNING "${ColorBoldRed}WARNING: Using dummy neural net backend, intended for non-neural-net testing only, will fail on any code path requiring a neural net. To use neural net, specify -DUSE_BACKEND=CUDA or -DUSE_BACKEND=TENSORRT or -DUSE_BACKEND=OPENCL or -DUSE_BACKEND=EIGEN to compile with the respective backend.${ColorReset}")
@@ -443,6 +467,9 @@ elseif(USE_BACKEND STREQUAL "EIGEN")
       endif()
     endif()
   endif()
+elseif(USE_BACKEND STREQUAL "MLX")
+  target_compile_definitions(katago PRIVATE USE_MLX_BACKEND)
+  target_link_libraries(katago mlx)
 endif()
 
 if(USE_BIGGER_BOARDS_EXPENSIVE)
