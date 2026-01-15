@@ -80,10 +80,9 @@ static mx::array convertConvWeightsOIHWtoOHWI(const vector<float>& weights,
 
 // Mish activation: x * tanh(softplus(x)) = x * tanh(log(1 + exp(x)))
 static mx::array applyMish(const mx::array& x) {
-  // For numerical stability with FP32, clamp before exp
-  mx::array softplus = mx::log(mx::array(1.0f) + mx::exp(mx::minimum(x, mx::array(20.0f))));
-  // For large x, softplus(x) ~ x
-  softplus = mx::where(x > mx::array(20.0f), x, softplus);
+  // softplus(x) = log(1 + exp(x)) = log(exp(0) + exp(x)) = logaddexp(0, x)
+  // logaddexp handles numerical stability internally
+  mx::array softplus = mx::logaddexp(mx::array(0.0f), x);
   return x * mx::tanh(softplus);
 }
 
@@ -98,6 +97,13 @@ static mx::array applyActivation(const mx::array& x, int activationType) {
     default:
       return x;
   }
+}
+
+// Fused matmul + bias: result = input @ weights + bias
+// Uses addmm for better performance (single kernel instead of matmul + add)
+static mx::array matmulBias(const mx::array& input, const mx::array& weights, const mx::array& bias) {
+  // addmm(c, a, b, alpha, beta) = alpha * (a @ b) + beta * c
+  return mx::addmm(bias, input, weights, 1.0f, 1.0f);
 }
 
 // Layers --------------------------------------------------------------------------------------------------------------
@@ -508,13 +514,12 @@ struct SGFMetadataEncoder {
   {}
 
   mx::array apply(const mx::array& metaInput) const {
-    mx::array out = mul1.apply(metaInput);
-    out = bias1.apply(out);
+    // Fuse matmul + bias with addmm for better performance
+    mx::array out = matmulBias(metaInput, mul1.weights, bias1.bias);
     out = applyActivation(out, act1);
-    out = mul2.apply(out);
-    out = bias2.apply(out);
+    out = matmulBias(out, mul2.weights, bias2.bias);
     out = applyActivation(out, act2);
-    out = mul3.apply(out);
+    out = mul3.apply(out);  // Last layer has no bias
     return out;
   }
 };
@@ -706,15 +711,12 @@ struct ValueHead {
     std::vector<int> squeezeAxes = {1, 2};
     mx::array v1MeanFlat = mx::squeeze(v1Mean, squeezeAxes);
 
-    mx::array v2Out = v2Mul.apply(v1MeanFlat);
-    v2Out = v2Bias.apply(v2Out);
+    // Fuse matmul + bias with addmm for better performance
+    mx::array v2Out = matmulBias(v1MeanFlat, v2Mul.weights, v2Bias.bias);
     v2Out = applyActivation(v2Out, v2Activation);
 
-    mx::array value = v3Mul.apply(v2Out);
-    value = v3Bias.apply(value);
-
-    mx::array scoreValue = sv3Mul.apply(v2Out);
-    scoreValue = sv3Bias.apply(scoreValue);
+    mx::array value = matmulBias(v2Out, v3Mul.weights, v3Bias.bias);
+    mx::array scoreValue = matmulBias(v2Out, sv3Mul.weights, sv3Bias.bias);
 
     mx::array ownership = vOwnershipConv.apply(v1Out);
 
