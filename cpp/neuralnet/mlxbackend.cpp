@@ -201,14 +201,16 @@ struct BatchNormLayer {
       mergedBias(createArray1D(getMergedBias(desc), desc.numChannels))
   {}
 
-  mx::array apply(const mx::array& input, const mx::array& mask) const {
+  mx::array apply(const mx::array& input, const mx::array& mask, bool useMask) const {
     // input: NHWC [N, H, W, C]
     // mask: NHW1 [N, H, W, 1]
     // BN: output = input * scale + bias
     mx::array normalized = input * mergedScale + mergedBias;
     mx::array activated = applyActivation(normalized, activation);
-    // Apply mask (zero out padded regions)
-    return activated * mask;
+    // Apply mask (zero out padded regions) - skip when useMask=false
+    if(useMask)
+      return activated * mask;
+    return activated;
   }
 };
 
@@ -273,7 +275,7 @@ struct MatBiasLayer {
 };
 
 // Global pooling: computes [mean, mean * (sqrt(maskSum) - 14) * 0.1, max] concatenated along channel axis
-static mx::array applyGlobalPooling(const mx::array& input, const mx::array& mask, const mx::array& maskSum) {
+static mx::array applyGlobalPooling(const mx::array& input, const mx::array& mask, const mx::array& maskSum, bool useMask) {
   // input: NHWC [N, H, W, C]
   // mask: NHW1 [N, H, W, 1]
   // maskSum: N111 [N, 1, 1, 1]
@@ -290,9 +292,10 @@ static mx::array applyGlobalPooling(const mx::array& input, const mx::array& mas
   mx::array scaleFactor = (sqrtMaskSum - mx::array(14.0f)) * mx::array(0.1f);
   mx::array meanScaled = mean * scaleFactor;
 
-  // Max with mask (set masked positions to large negative before max)
-  mx::array maskedInput = input - (mx::array(1.0f) - mask) * mx::array(1e9f);
-  mx::array maxVal = mx::max(maskedInput, spatialAxes, /*keepdims=*/true); // [N, 1, 1, C]
+  // Max - skip mask adjustment when useMask=false (all positions valid)
+  mx::array maxVal = useMask
+    ? mx::max(input - (mx::array(1.0f) - mask) * mx::array(1e9f), spatialAxes, /*keepdims=*/true)
+    : mx::max(input, spatialAxes, /*keepdims=*/true);
 
   // Concatenate along channel axis (axis 3 for NHWC)
   std::vector<mx::array> concatInputs = {mean, meanScaled, maxVal};
@@ -337,10 +340,10 @@ struct ResidualBlock {
       finalConv(desc.finalConv)
   {}
 
-  mx::array apply(const mx::array& input, const mx::array& mask) const {
-    mx::array out = preBN.apply(input, mask);
+  mx::array apply(const mx::array& input, const mx::array& mask, bool useMask) const {
+    mx::array out = preBN.apply(input, mask, useMask);
     out = regularConv.apply(out);
-    out = midBN.apply(out, mask);
+    out = midBN.apply(out, mask, useMask);
     out = finalConv.apply(out);
     return input + out;
   }
@@ -372,16 +375,16 @@ struct GlobalPoolingResidualBlock {
       finalConv(desc.finalConv)
   {}
 
-  mx::array apply(const mx::array& input, const mx::array& mask, const mx::array& maskSum) const {
-    mx::array preOut = preBN.apply(input, mask);
+  mx::array apply(const mx::array& input, const mx::array& mask, const mx::array& maskSum, bool useMask) const {
+    mx::array preOut = preBN.apply(input, mask, useMask);
 
     // Regular path
     mx::array regularOut = regularConv.apply(preOut);
 
     // Global pooling path
     mx::array gpoolOut = gpoolConv.apply(preOut);
-    gpoolOut = gpoolBN.apply(gpoolOut, mask);
-    mx::array pooled = applyGlobalPooling(gpoolOut, mask, maskSum);
+    gpoolOut = gpoolBN.apply(gpoolOut, mask, useMask);
+    mx::array pooled = applyGlobalPooling(gpoolOut, mask, maskSum, useMask);
 
     // Squeeze spatial dims for matmul: [N, 1, 1, C*3] -> [N, C*3]
     std::vector<int> squeezeAxes = {1, 2};
@@ -393,7 +396,7 @@ struct GlobalPoolingResidualBlock {
     bias = mx::reshape(bias, biasShape);
     mx::array combined = regularOut + bias;
 
-    combined = midBN.apply(combined, mask);
+    combined = midBN.apply(combined, mask, useMask);
     mx::array finalOut = finalConv.apply(combined);
 
     return input + finalOut;
@@ -420,7 +423,7 @@ struct BlockVariant {
   // Forward declaration - defined after NestedBottleneckResidualBlock
   BlockVariant(const NestedBottleneckResidualBlockDesc& desc);
 
-  mx::array apply(const mx::array& input, const mx::array& mask, const mx::array& maskSum) const;
+  mx::array apply(const mx::array& input, const mx::array& mask, const mx::array& maskSum, bool useMask) const;
 };
 
 struct NestedBottleneckResidualBlock {
@@ -453,15 +456,15 @@ struct NestedBottleneckResidualBlock {
     }
   }
 
-  mx::array apply(const mx::array& input, const mx::array& mask, const mx::array& maskSum) const {
-    mx::array out = preBN.apply(input, mask);
+  mx::array apply(const mx::array& input, const mx::array& mask, const mx::array& maskSum, bool useMask) const {
+    mx::array out = preBN.apply(input, mask, useMask);
     out = preConv.apply(out);
 
     for(const auto& block : blocks) {
-      out = block.apply(out, mask, maskSum);
+      out = block.apply(out, mask, maskSum, useMask);
     }
 
-    out = postBN.apply(out, mask);
+    out = postBN.apply(out, mask, useMask);
     out = postConv.apply(out);
 
     return input + out;
@@ -472,14 +475,14 @@ struct NestedBottleneckResidualBlock {
 BlockVariant::BlockVariant(const NestedBottleneckResidualBlockDesc& desc)
   : type(NESTED_BOTTLENECK), nestedBottleneck(make_unique<NestedBottleneckResidualBlock>(desc)) {}
 
-mx::array BlockVariant::apply(const mx::array& input, const mx::array& mask, const mx::array& maskSum) const {
+mx::array BlockVariant::apply(const mx::array& input, const mx::array& mask, const mx::array& maskSum, bool useMask) const {
   switch(type) {
     case REGULAR:
-      return regular->apply(input, mask);
+      return regular->apply(input, mask, useMask);
     case GLOBAL_POOLING:
-      return globalPooling->apply(input, mask, maskSum);
+      return globalPooling->apply(input, mask, maskSum, useMask);
     case NESTED_BOTTLENECK:
-      return nestedBottleneck->apply(input, mask, maskSum);
+      return nestedBottleneck->apply(input, mask, maskSum, useMask);
     default:
       return input;
   }
@@ -568,7 +571,8 @@ struct Trunk {
     const mx::array& inputGlobal,
     const mx::array* inputMeta,
     const mx::array& mask,
-    const mx::array& maskSum
+    const mx::array& maskSum,
+    bool useMask
   ) const {
     // Initial conv
     mx::array trunk = initialConv.apply(input);
@@ -588,16 +592,17 @@ struct Trunk {
       trunk = trunk + metaBias;
     }
 
-    // Apply mask
-    trunk = trunk * mask;
+    // Apply mask - skip when useMask=false (all positions valid)
+    if(useMask)
+      trunk = trunk * mask;
 
     // Apply residual blocks
     for(const auto& block : blocks) {
-      trunk = block.apply(trunk, mask, maskSum);
+      trunk = block.apply(trunk, mask, maskSum, useMask);
     }
 
     // Final BN + activation
-    trunk = trunkTipBN.apply(trunk, mask);
+    trunk = trunkTipBN.apply(trunk, mask, useMask);
 
     return trunk;
   }
@@ -634,15 +639,16 @@ struct PolicyHead {
   std::pair<mx::array, mx::array> apply(
     const mx::array& trunk,
     const mx::array& mask,
-    const mx::array& maskSum
+    const mx::array& maskSum,
+    bool useMask
   ) const {
     // Policy conv
     mx::array p1Out = p1Conv.apply(trunk);
 
     // Global pooling path
     mx::array g1Out = g1Conv.apply(trunk);
-    g1Out = g1BN.apply(g1Out, mask);
-    mx::array pooled = applyGlobalPooling(g1Out, mask, maskSum);
+    g1Out = g1BN.apply(g1Out, mask, useMask);
+    mx::array pooled = applyGlobalPooling(g1Out, mask, maskSum, useMask);
     std::vector<int> squeezeAxes = {1, 2};
     mx::array pooledFlat = mx::squeeze(pooled, squeezeAxes);
 
@@ -652,7 +658,7 @@ struct PolicyHead {
     bias = mx::reshape(bias, biasShape);
     p1Out = p1Out + bias;
 
-    p1Out = p1BN.apply(p1Out, mask);
+    p1Out = p1BN.apply(p1Out, mask, useMask);
 
     // Final policy conv
     mx::array policy = p2Conv.apply(p1Out);
@@ -701,12 +707,13 @@ struct ValueHead {
   std::tuple<mx::array, mx::array, mx::array> apply(
     const mx::array& trunk,
     const mx::array& mask,
-    const mx::array& maskSum
+    const mx::array& maskSum,
+    bool useMask
   ) const {
     mx::array v1Out = v1Conv.apply(trunk);
-    v1Out = v1BN.apply(v1Out, mask);
+    v1Out = v1BN.apply(v1Out, mask, useMask);
 
-    // Value head pooling
+    // Value head pooling (only uses maskSum, not mask)
     mx::array v1Mean = applyValueHeadPooling(v1Out, maskSum);
     std::vector<int> squeezeAxes = {1, 2};
     mx::array v1MeanFlat = mx::squeeze(v1Mean, squeezeAxes);
@@ -766,12 +773,17 @@ struct Model {
     int batchSize,
     int nnXLen,
     int nnYLen,
+    bool requireExactNNLen,
     float* policyOut,
     float* policyPassOut,
     float* valueOut,
     float* scoreValueOut,
     float* ownershipOut
   ) const {
+    // When requireExactNNLen=true, all boards are exactly nnXLen x nnYLen,
+    // so all mask values are 1 and we can skip mask operations
+    const bool useMask = !requireExactNNLen;
+
     // Create input tensors - NHWC format
     mx::Shape inputShape = {batchSize, nnYLen, nnXLen, numInputChannels};
     mx::array input = mx::array(inputSpatial, inputShape, mx::float32);
@@ -783,9 +795,12 @@ struct Model {
     mx::Shape sliceEnd = {batchSize, nnYLen, nnXLen, 1};
     mx::array mask = mx::slice(input, sliceStart, sliceEnd);
 
-    // Compute mask sum
+    // Compute mask sum - needed for pooling normalization even when useMask=false
+    // Pre-compute fixed maskSum = nnXLen * nnYLen when all mask values are 1
     std::vector<int> sumAxes = {1, 2};
-    mx::array maskSum = mx::sum(mask, sumAxes, /*keepdims=*/true); // [N, 1, 1, 1]
+    mx::array maskSum = requireExactNNLen
+      ? mx::full({batchSize, 1, 1, 1}, static_cast<float>(nnXLen * nnYLen))
+      : mx::sum(mask, sumAxes, /*keepdims=*/true);
 
     // Optional metadata input
     unique_ptr<mx::array> inputMetaArr;
@@ -795,13 +810,13 @@ struct Model {
     }
 
     // Apply trunk
-    mx::array trunkOut = trunk.apply(input, inputGlobalArr, inputMetaArr.get(), mask, maskSum);
+    mx::array trunkOut = trunk.apply(input, inputGlobalArr, inputMetaArr.get(), mask, maskSum, useMask);
 
     // Apply policy head
-    auto [policyPass, policy] = policyHead.apply(trunkOut, mask, maskSum);
+    auto [policyPass, policy] = policyHead.apply(trunkOut, mask, maskSum, useMask);
 
     // Apply value head
-    auto [value, scoreValue, ownership] = valueHead.apply(trunkOut, mask, maskSum);
+    auto [value, scoreValue, ownership] = valueHead.apply(trunkOut, mask, maskSum, useMask);
 
     // Force evaluation of all outputs
     std::vector<mx::array> outputs = {policy, policyPass, value, scoreValue, ownership};
@@ -846,6 +861,7 @@ struct ComputeContext {
 struct ComputeHandle {
   ComputeContext* context;
   bool inputsUseNHWC;
+  bool requireExactNNLen;
   const std::string modelCacheKey;
   std::shared_ptr<const Model> model;
   const int modelVersion;
@@ -854,9 +870,10 @@ struct ComputeHandle {
   ComputeHandle(const ComputeHandle&) = delete;
   ComputeHandle& operator=(const ComputeHandle&) = delete;
 
-  ComputeHandle(ComputeContext* ctx, const LoadedModel& loadedModel, bool iNHWC)
+  ComputeHandle(ComputeContext* ctx, const LoadedModel& loadedModel, bool iNHWC, bool requireExactNNLen_)
     : context(ctx),
       inputsUseNHWC(iNHWC),
+      requireExactNNLen(requireExactNNLen_),
       modelCacheKey(loadedModel.modelDesc.name + "-" + loadedModel.modelDesc.sha256),
       model(nullptr),
       modelVersion(loadedModel.modelDesc.modelVersion)
@@ -1016,13 +1033,12 @@ ComputeHandle* NeuralNet::createComputeHandle(
   }
 
   (void)maxBatchSize;
-  (void)requireExactNNLen;
   (void)gpuIdxForThisThread;
 
   if(!inputsUseNHWC)
     throw StringError("MLX backend: inputsUseNHWC = false unsupported");
 
-  return new ComputeHandle(context, *loadedModel, inputsUseNHWC);
+  return new ComputeHandle(context, *loadedModel, inputsUseNHWC, requireExactNNLen);
 }
 
 void NeuralNet::freeComputeHandle(ComputeHandle* gpuHandle) {
@@ -1089,6 +1105,7 @@ void NeuralNet::getOutput(
     batchSize,
     nnXLen,
     nnYLen,
+    computeHandle->requireExactNNLen,
     inputBuffers->policyResults.data(),
     inputBuffers->policyPassResults.data(),
     inputBuffers->valueResults.data(),
@@ -1252,7 +1269,7 @@ bool NeuralNet::testEvaluateBatchNorm(
   mx::Shape maskShape = {batchSize, nnYLen, nnXLen, 1};
   mx::array input = mx::array(inputBuffer.data(), inputShape, mx::float32);
   mx::array mask = mx::array(maskBuffer.data(), maskShape, mx::float32);
-  mx::array output = layer.apply(input, mask);
+  mx::array output = layer.apply(input, mask, /*useMask=*/true);
   mx::eval(output);
 
   memcpy(outputBuffer.data(), output.data<float>(), numOutputFloats * sizeof(float));
@@ -1283,7 +1300,7 @@ bool NeuralNet::testEvaluateResidualBlock(
   mx::Shape maskShape = {batchSize, nnYLen, nnXLen, 1};
   mx::array input = mx::array(inputBuffer.data(), inputShape, mx::float32);
   mx::array mask = mx::array(maskBuffer.data(), maskShape, mx::float32);
-  mx::array output = block.apply(input, mask);
+  mx::array output = block.apply(input, mask, /*useMask=*/true);
   mx::eval(output);
 
   memcpy(outputBuffer.data(), output.data<float>(), numOutputFloats * sizeof(float));
@@ -1316,7 +1333,7 @@ bool NeuralNet::testEvaluateGlobalPoolingResidualBlock(
   mx::array mask = mx::array(maskBuffer.data(), maskShape, mx::float32);
   std::vector<int> sumAxes = {1, 2};
   mx::array maskSum = mx::sum(mask, sumAxes, /*keepdims=*/true);
-  mx::array output = block.apply(input, mask, maskSum);
+  mx::array output = block.apply(input, mask, maskSum, /*useMask=*/true);
   mx::eval(output);
 
   memcpy(outputBuffer.data(), output.data<float>(), numOutputFloats * sizeof(float));
