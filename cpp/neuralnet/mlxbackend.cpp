@@ -3,7 +3,8 @@
 /**
  * MLX backend for KataGo.
  * Uses Apple's MLX framework for neural network inference on Apple Silicon.
- * Only supports float32 computation with NHWC memory layout.
+ * Supports FP16 (half precision) and FP32 computation with NHWC memory layout.
+ * FP32 is used by default (FP16 does not improve performance on MLX).
  */
 
 #include "../neuralnet/nninterface.h"
@@ -28,8 +29,8 @@ namespace mx = mlx::core;
 // Type alias for compiled inference functions
 using CompiledInferenceFunc = std::function<std::vector<mx::array>(const std::vector<mx::array>&)>;
 
-// Cache key: (batchSize, nnXLen, nnYLen, useMask, hasMeta)
-using CompileCacheKey = std::tuple<int, int, int, bool, bool>;
+// Cache key: (batchSize, nnXLen, nnYLen, useMask, hasMeta, useFP16)
+using CompileCacheKey = std::tuple<int, int, int, bool, bool, bool>;
 using namespace std;
 
 
@@ -84,6 +85,11 @@ static mx::array convertConvWeightsOIHWtoOHWI(const vector<float>& weights,
   return mx::array(converted.data(), shape, mx::float32);
 }
 
+// Convert array to compute dtype
+static mx::array toComputeDtype(const mx::array& arr, bool useFP16) {
+  return useFP16 ? mx::astype(arr, mx::float16) : arr;
+}
+
 // Mish activation: x * tanh(softplus(x)) = x * tanh(log(1 + exp(x)))
 static mx::array applyMish(const mx::array& x) {
   // softplus(x) = log(1 + exp(x)) = log(exp(0) + exp(x)) = logaddexp(0, x)
@@ -128,7 +134,7 @@ struct ConvLayer {
   ConvLayer(const ConvLayer&) = delete;
   ConvLayer& operator=(const ConvLayer&) = delete;
 
-  ConvLayer(const ConvLayerDesc& desc)
+  ConvLayer(const ConvLayerDesc& desc, bool useFP16 = false)
     : name(desc.name),
       convYSize(desc.convYSize),
       convXSize(desc.convXSize),
@@ -136,7 +142,7 @@ struct ConvLayer {
       outChannels(desc.outChannels),
       dilationY(desc.dilationY),
       dilationX(desc.dilationX),
-      weights(convertConvWeightsOIHWtoOHWI(desc.weights, outChannels, inChannels, convYSize, convXSize))
+      weights(toComputeDtype(convertConvWeightsOIHWtoOHWI(desc.weights, outChannels, inChannels, convYSize, convXSize), useFP16))
   {}
 
   mx::array apply(const mx::array& input) const {
@@ -167,9 +173,10 @@ struct BatchNormLayer {
   BatchNormLayer(const BatchNormLayer&) = delete;
   BatchNormLayer& operator=(const BatchNormLayer&) = delete;
 
-  static mx::array createArray1D(const std::vector<float>& data, int size) {
+  static mx::array createArray1D(const std::vector<float>& data, int size, bool useFP16) {
     mx::Shape shape = {size};
-    return mx::array(data.data(), shape, mx::float32);
+    mx::array arr = mx::array(data.data(), shape, mx::float32);
+    return toComputeDtype(arr, useFP16);
   }
 
   static std::vector<float> getMergedScale(const BatchNormLayerDesc& desc) {
@@ -199,12 +206,12 @@ struct BatchNormLayer {
     return mergedBias;
   }
 
-  BatchNormLayer(const BatchNormLayerDesc& desc, int activationType)
+  BatchNormLayer(const BatchNormLayerDesc& desc, int activationType, bool useFP16 = false)
     : name(desc.name),
       numChannels(desc.numChannels),
       activation(activationType),
-      mergedScale(createArray1D(getMergedScale(desc), desc.numChannels)),
-      mergedBias(createArray1D(getMergedBias(desc), desc.numChannels))
+      mergedScale(createArray1D(getMergedScale(desc), desc.numChannels, useFP16)),
+      mergedBias(createArray1D(getMergedBias(desc), desc.numChannels, useFP16))
   {}
 
   mx::array apply(const mx::array& input, const mx::array& mask, bool useMask) const {
@@ -230,22 +237,23 @@ struct MatMulLayer {
   MatMulLayer(const MatMulLayer&) = delete;
   MatMulLayer& operator=(const MatMulLayer&) = delete;
 
-  static mx::array createWeights(const MatMulLayerDesc& desc) {
+  static mx::array createWeights(const MatMulLayerDesc& desc, bool useFP16) {
     if(desc.inChannels > 0 && desc.outChannels > 0) {
       // Original weights: [inC, outC] (column-major)
       mx::Shape shape = {desc.inChannels, desc.outChannels};
-      return mx::array(desc.weights.data(), shape, mx::float32);
+      mx::array arr = mx::array(desc.weights.data(), shape, mx::float32);
+      return toComputeDtype(arr, useFP16);
     }
     std::vector<float> dummy = {0.0f};
     mx::Shape shape = {1};
     return mx::array(dummy.data(), shape, mx::float32);
   }
 
-  MatMulLayer(const MatMulLayerDesc& desc)
+  MatMulLayer(const MatMulLayerDesc& desc, bool useFP16 = false)
     : name(desc.name),
       inChannels(desc.inChannels),
       outChannels(desc.outChannels),
-      weights(createWeights(desc))
+      weights(createWeights(desc, useFP16))
   {}
 
   mx::array apply(const mx::array& input) const {
@@ -264,15 +272,16 @@ struct MatBiasLayer {
   MatBiasLayer(const MatBiasLayer&) = delete;
   MatBiasLayer& operator=(const MatBiasLayer&) = delete;
 
-  static mx::array createBias(const MatBiasLayerDesc& desc) {
+  static mx::array createBias(const MatBiasLayerDesc& desc, bool useFP16) {
     mx::Shape shape = {desc.numChannels};
-    return mx::array(desc.weights.data(), shape, mx::float32);
+    mx::array arr = mx::array(desc.weights.data(), shape, mx::float32);
+    return toComputeDtype(arr, useFP16);
   }
 
-  MatBiasLayer(const MatBiasLayerDesc& desc)
+  MatBiasLayer(const MatBiasLayerDesc& desc, bool useFP16 = false)
     : name(desc.name),
       numChannels(desc.numChannels),
-      bias(createBias(desc))
+      bias(createBias(desc, useFP16))
   {}
 
   mx::array apply(const mx::array& input) const {
@@ -338,12 +347,12 @@ struct ResidualBlock {
   ResidualBlock(const ResidualBlock&) = delete;
   ResidualBlock& operator=(const ResidualBlock&) = delete;
 
-  ResidualBlock(const ResidualBlockDesc& desc)
+  ResidualBlock(const ResidualBlockDesc& desc, bool useFP16 = false)
     : name(desc.name),
-      preBN(desc.preBN, desc.preActivation.activation),
-      regularConv(desc.regularConv),
-      midBN(desc.midBN, desc.midActivation.activation),
-      finalConv(desc.finalConv)
+      preBN(desc.preBN, desc.preActivation.activation, useFP16),
+      regularConv(desc.regularConv, useFP16),
+      midBN(desc.midBN, desc.midActivation.activation, useFP16),
+      finalConv(desc.finalConv, useFP16)
   {}
 
   mx::array apply(const mx::array& input, const mx::array& mask, bool useMask) const {
@@ -370,15 +379,15 @@ struct GlobalPoolingResidualBlock {
   GlobalPoolingResidualBlock(const GlobalPoolingResidualBlock&) = delete;
   GlobalPoolingResidualBlock& operator=(const GlobalPoolingResidualBlock&) = delete;
 
-  GlobalPoolingResidualBlock(const GlobalPoolingResidualBlockDesc& desc)
+  GlobalPoolingResidualBlock(const GlobalPoolingResidualBlockDesc& desc, bool useFP16 = false)
     : name(desc.name),
-      preBN(desc.preBN, desc.preActivation.activation),
-      regularConv(desc.regularConv),
-      gpoolConv(desc.gpoolConv),
-      gpoolBN(desc.gpoolBN, desc.gpoolActivation.activation),
-      gpoolToBiasMul(desc.gpoolToBiasMul),
-      midBN(desc.midBN, desc.midActivation.activation),
-      finalConv(desc.finalConv)
+      preBN(desc.preBN, desc.preActivation.activation, useFP16),
+      regularConv(desc.regularConv, useFP16),
+      gpoolConv(desc.gpoolConv, useFP16),
+      gpoolBN(desc.gpoolBN, desc.gpoolActivation.activation, useFP16),
+      gpoolToBiasMul(desc.gpoolToBiasMul, useFP16),
+      midBN(desc.midBN, desc.midActivation.activation, useFP16),
+      finalConv(desc.finalConv, useFP16)
   {}
 
   mx::array apply(const mx::array& input, const mx::array& mask, const mx::array& maskSum, bool useMask) const {
@@ -420,14 +429,14 @@ struct BlockVariant {
   unique_ptr<GlobalPoolingResidualBlock> globalPooling;
   unique_ptr<NestedBottleneckResidualBlock> nestedBottleneck;
 
-  BlockVariant(const ResidualBlockDesc& desc)
-    : type(REGULAR), regular(make_unique<ResidualBlock>(desc)) {}
+  BlockVariant(const ResidualBlockDesc& desc, bool useFP16 = false)
+    : type(REGULAR), regular(make_unique<ResidualBlock>(desc, useFP16)) {}
 
-  BlockVariant(const GlobalPoolingResidualBlockDesc& desc)
-    : type(GLOBAL_POOLING), globalPooling(make_unique<GlobalPoolingResidualBlock>(desc)) {}
+  BlockVariant(const GlobalPoolingResidualBlockDesc& desc, bool useFP16 = false)
+    : type(GLOBAL_POOLING), globalPooling(make_unique<GlobalPoolingResidualBlock>(desc, useFP16)) {}
 
   // Forward declaration - defined after NestedBottleneckResidualBlock
-  BlockVariant(const NestedBottleneckResidualBlockDesc& desc);
+  BlockVariant(const NestedBottleneckResidualBlockDesc& desc, bool useFP16);
 
   mx::array apply(const mx::array& input, const mx::array& mask, const mx::array& maskSum, bool useMask) const;
 };
@@ -444,20 +453,20 @@ struct NestedBottleneckResidualBlock {
   NestedBottleneckResidualBlock(const NestedBottleneckResidualBlock&) = delete;
   NestedBottleneckResidualBlock& operator=(const NestedBottleneckResidualBlock&) = delete;
 
-  NestedBottleneckResidualBlock(const NestedBottleneckResidualBlockDesc& desc)
+  NestedBottleneckResidualBlock(const NestedBottleneckResidualBlockDesc& desc, bool useFP16 = false)
     : name(desc.name),
-      preBN(desc.preBN, desc.preActivation.activation),
-      preConv(desc.preConv),
-      postBN(desc.postBN, desc.postActivation.activation),
-      postConv(desc.postConv)
+      preBN(desc.preBN, desc.preActivation.activation, useFP16),
+      preConv(desc.preConv, useFP16),
+      postBN(desc.postBN, desc.postActivation.activation, useFP16),
+      postConv(desc.postConv, useFP16)
   {
     for(size_t i = 0; i < desc.blocks.size(); i++) {
       int blockKind = desc.blocks[i].first;
       if(blockKind == ORDINARY_BLOCK_KIND) {
-        blocks.emplace_back(*static_cast<ResidualBlockDesc*>(desc.blocks[i].second.get()));
+        blocks.emplace_back(*static_cast<ResidualBlockDesc*>(desc.blocks[i].second.get()), useFP16);
       }
       else if(blockKind == GLOBAL_POOLING_BLOCK_KIND) {
-        blocks.emplace_back(*static_cast<GlobalPoolingResidualBlockDesc*>(desc.blocks[i].second.get()));
+        blocks.emplace_back(*static_cast<GlobalPoolingResidualBlockDesc*>(desc.blocks[i].second.get()), useFP16);
       }
     }
   }
@@ -478,8 +487,8 @@ struct NestedBottleneckResidualBlock {
 };
 
 // Define BlockVariant constructor for NestedBottleneckResidualBlock now that it's complete
-BlockVariant::BlockVariant(const NestedBottleneckResidualBlockDesc& desc)
-  : type(NESTED_BOTTLENECK), nestedBottleneck(make_unique<NestedBottleneckResidualBlock>(desc)) {}
+BlockVariant::BlockVariant(const NestedBottleneckResidualBlockDesc& desc, bool useFP16)
+  : type(NESTED_BOTTLENECK), nestedBottleneck(make_unique<NestedBottleneckResidualBlock>(desc, useFP16)) {}
 
 mx::array BlockVariant::apply(const mx::array& input, const mx::array& mask, const mx::array& maskSum, bool useMask) const {
   switch(type) {
@@ -510,16 +519,16 @@ struct SGFMetadataEncoder {
   SGFMetadataEncoder(const SGFMetadataEncoder&) = delete;
   SGFMetadataEncoder& operator=(const SGFMetadataEncoder&) = delete;
 
-  SGFMetadataEncoder(const SGFMetadataEncoderDesc& desc)
+  SGFMetadataEncoder(const SGFMetadataEncoderDesc& desc, bool useFP16 = false)
     : metaEncoderVersion(desc.metaEncoderVersion),
       numInputMetaChannels(desc.numInputMetaChannels),
-      mul1(desc.mul1),
-      bias1(desc.bias1),
+      mul1(desc.mul1, useFP16),
+      bias1(desc.bias1, useFP16),
       act1(desc.act1.activation),
-      mul2(desc.mul2),
-      bias2(desc.bias2),
+      mul2(desc.mul2, useFP16),
+      bias2(desc.bias2, useFP16),
       act2(desc.act2.activation),
-      mul3(desc.mul3)
+      mul3(desc.mul3, useFP16)
   {}
 
   mx::array apply(const mx::array& metaInput) const {
@@ -547,27 +556,27 @@ struct Trunk {
   Trunk(const Trunk&) = delete;
   Trunk& operator=(const Trunk&) = delete;
 
-  Trunk(const TrunkDesc& desc)
+  Trunk(const TrunkDesc& desc, bool useFP16 = false)
     : name(desc.name),
       trunkNumChannels(desc.trunkNumChannels),
-      initialConv(desc.initialConv),
-      initialMatMul(desc.initialMatMul),
-      trunkTipBN(desc.trunkTipBN, desc.trunkTipActivation.activation)
+      initialConv(desc.initialConv, useFP16),
+      initialMatMul(desc.initialMatMul, useFP16),
+      trunkTipBN(desc.trunkTipBN, desc.trunkTipActivation.activation, useFP16)
   {
     if(desc.sgfMetadataEncoder.metaEncoderVersion > 0 && desc.sgfMetadataEncoder.numInputMetaChannels > 0) {
-      sgfMetadataEncoder = make_unique<SGFMetadataEncoder>(desc.sgfMetadataEncoder);
+      sgfMetadataEncoder = make_unique<SGFMetadataEncoder>(desc.sgfMetadataEncoder, useFP16);
     }
 
     for(size_t i = 0; i < desc.blocks.size(); i++) {
       int blockKind = desc.blocks[i].first;
       if(blockKind == ORDINARY_BLOCK_KIND) {
-        blocks.emplace_back(*static_cast<ResidualBlockDesc*>(desc.blocks[i].second.get()));
+        blocks.emplace_back(*static_cast<ResidualBlockDesc*>(desc.blocks[i].second.get()), useFP16);
       }
       else if(blockKind == GLOBAL_POOLING_BLOCK_KIND) {
-        blocks.emplace_back(*static_cast<GlobalPoolingResidualBlockDesc*>(desc.blocks[i].second.get()));
+        blocks.emplace_back(*static_cast<GlobalPoolingResidualBlockDesc*>(desc.blocks[i].second.get()), useFP16);
       }
       else if(blockKind == NESTED_BOTTLENECK_BLOCK_KIND) {
-        blocks.emplace_back(*static_cast<NestedBottleneckResidualBlockDesc*>(desc.blocks[i].second.get()));
+        blocks.emplace_back(*static_cast<NestedBottleneckResidualBlockDesc*>(desc.blocks[i].second.get()), useFP16);
       }
     }
   }
@@ -630,16 +639,16 @@ struct PolicyHead {
   PolicyHead(const PolicyHead&) = delete;
   PolicyHead& operator=(const PolicyHead&) = delete;
 
-  PolicyHead(const PolicyHeadDesc& desc)
+  PolicyHead(const PolicyHeadDesc& desc, bool useFP16 = false)
     : name(desc.name),
       modelVersion(desc.modelVersion),
-      p1Conv(desc.p1Conv),
-      g1Conv(desc.g1Conv),
-      g1BN(desc.g1BN, desc.g1Activation.activation),
-      gpoolToBiasMul(desc.gpoolToBiasMul),
-      p1BN(desc.p1BN, desc.p1Activation.activation),
-      p2Conv(desc.p2Conv),
-      gpoolToPassMul(desc.gpoolToPassMul)
+      p1Conv(desc.p1Conv, useFP16),
+      g1Conv(desc.g1Conv, useFP16),
+      g1BN(desc.g1BN, desc.g1Activation.activation, useFP16),
+      gpoolToBiasMul(desc.gpoolToBiasMul, useFP16),
+      p1BN(desc.p1BN, desc.p1Activation.activation, useFP16),
+      p2Conv(desc.p2Conv, useFP16),
+      gpoolToPassMul(desc.gpoolToPassMul, useFP16)
   {}
 
   std::pair<mx::array, mx::array> apply(
@@ -695,19 +704,19 @@ struct ValueHead {
   ValueHead(const ValueHead&) = delete;
   ValueHead& operator=(const ValueHead&) = delete;
 
-  ValueHead(const ValueHeadDesc& desc)
+  ValueHead(const ValueHeadDesc& desc, bool useFP16 = false)
     : name(desc.name),
       modelVersion(desc.modelVersion),
-      v1Conv(desc.v1Conv),
-      v1BN(desc.v1BN, desc.v1Activation.activation),
-      v2Mul(desc.v2Mul),
-      v2Bias(desc.v2Bias),
+      v1Conv(desc.v1Conv, useFP16),
+      v1BN(desc.v1BN, desc.v1Activation.activation, useFP16),
+      v2Mul(desc.v2Mul, useFP16),
+      v2Bias(desc.v2Bias, useFP16),
       v2Activation(desc.v2Activation.activation),
-      v3Mul(desc.v3Mul),
-      v3Bias(desc.v3Bias),
-      sv3Mul(desc.sv3Mul),
-      sv3Bias(desc.sv3Bias),
-      vOwnershipConv(desc.vOwnershipConv)
+      v3Mul(desc.v3Mul, useFP16),
+      v3Bias(desc.v3Bias, useFP16),
+      sv3Mul(desc.sv3Mul, useFP16),
+      sv3Bias(desc.sv3Bias, useFP16),
+      vOwnershipConv(desc.vOwnershipConv, useFP16)
   {}
 
   std::tuple<mx::array, mx::array, mx::array> apply(
@@ -748,6 +757,7 @@ struct Model {
   const int numValueChannels;
   const int numScoreValueChannels;
   const int numOwnershipChannels;
+  const bool useFP16;
 
   const Trunk trunk;
   const PolicyHead policyHead;
@@ -757,7 +767,7 @@ struct Model {
   Model(const Model&) = delete;
   Model& operator=(const Model&) = delete;
 
-  Model(const ModelDesc& desc)
+  Model(const ModelDesc& desc, bool useFP16_ = false)
     : name(desc.name),
       modelVersion(desc.modelVersion),
       numInputChannels(desc.numInputChannels),
@@ -767,9 +777,10 @@ struct Model {
       numValueChannels(desc.numValueChannels),
       numScoreValueChannels(desc.numScoreValueChannels),
       numOwnershipChannels(desc.numOwnershipChannels),
-      trunk(desc.trunk),
-      policyHead(desc.policyHead),
-      valueHead(desc.valueHead)
+      useFP16(useFP16_),
+      trunk(desc.trunk, useFP16_),
+      policyHead(desc.policyHead, useFP16_),
+      valueHead(desc.valueHead, useFP16_)
   {}
 
   // Apply model inference with mx::array inputs directly (for compiled execution)
@@ -779,11 +790,17 @@ struct Model {
     const std::vector<mx::array>& inputs,
     bool useMask
   ) const {
-    const mx::array& input = inputs[0];
-    const mx::array& inputGlobalArr = inputs[1];
-    const mx::array& mask = inputs[2];
+    // Convert inputs to compute dtype if FP16 is enabled
+    mx::array input = toComputeDtype(inputs[0], useFP16);
+    mx::array inputGlobalArr = toComputeDtype(inputs[1], useFP16);
+    mx::array mask = toComputeDtype(inputs[2], useFP16);
+    // maskSum stays FP32 - small scalar, negligible impact
     const mx::array& maskSum = inputs[3];
-    const mx::array* inputMetaPtr = (inputs.size() > 4) ? &inputs[4] : nullptr;
+    unique_ptr<mx::array> inputMeta;
+    if(inputs.size() > 4) {
+      inputMeta = make_unique<mx::array>(toComputeDtype(inputs[4], useFP16));
+    }
+    const mx::array* inputMetaPtr = inputMeta.get();
 
     // Apply trunk
     mx::array trunkOut = trunk.apply(input, inputGlobalArr, inputMetaPtr, mask, maskSum, useMask);
@@ -793,6 +810,15 @@ struct Model {
 
     // Apply value head
     auto [value, scoreValue, ownership] = valueHead.apply(trunkOut, mask, maskSum, useMask);
+
+    // Convert outputs back to FP32 for interface compatibility
+    if(useFP16) {
+      policy = mx::astype(policy, mx::float32);
+      policyPass = mx::astype(policyPass, mx::float32);
+      value = mx::astype(value, mx::float32);
+      scoreValue = mx::astype(scoreValue, mx::float32);
+      ownership = mx::astype(ownership, mx::float32);
+    }
 
     return {policy, policyPass, value, scoreValue, ownership};
   }
@@ -943,6 +969,7 @@ struct Model {
 struct ComputeContext {
   const int nnXLen;
   const int nnYLen;
+  const enabled_t useFP16Mode;
 
   std::mutex cachedModelsMutex;
   std::map<std::string, std::shared_ptr<const Model>> cachedModels;
@@ -952,9 +979,10 @@ struct ComputeContext {
   ComputeContext(const ComputeContext&) = delete;
   ComputeContext& operator=(const ComputeContext&) = delete;
 
-  ComputeContext(int nnX, int nnY)
+  ComputeContext(int nnX, int nnY, enabled_t fp16Mode)
     : nnXLen(nnX),
       nnYLen(nnY),
+      useFP16Mode(fp16Mode),
       cachedModelsMutex(),
       cachedModels(),
       cachedModelsRefCount()
@@ -969,11 +997,12 @@ struct ComputeHandle {
   ComputeContext* context;
   bool inputsUseNHWC;
   bool requireExactNNLen;
+  bool useFP16;
   const std::string modelCacheKey;
   std::shared_ptr<const Model> model;
   const int modelVersion;
 
-  // Compiled function cache - keyed by (batchSize, nnXLen, nnYLen, useMask, hasMeta)
+  // Compiled function cache - keyed by (batchSize, nnXLen, nnYLen, useMask, hasMeta, useFP16)
   mutable std::mutex compiledFuncsMutex;
   mutable std::map<CompileCacheKey, CompiledInferenceFunc> compiledFuncs;
 
@@ -981,11 +1010,16 @@ struct ComputeHandle {
   ComputeHandle(const ComputeHandle&) = delete;
   ComputeHandle& operator=(const ComputeHandle&) = delete;
 
-  ComputeHandle(ComputeContext* ctx, const LoadedModel& loadedModel, bool iNHWC, bool requireExactNNLen_)
+  static std::string makeCacheKey(const LoadedModel& loadedModel, bool useFP16) {
+    return loadedModel.modelDesc.name + "-" + loadedModel.modelDesc.sha256 + (useFP16 ? "-fp16" : "-fp32");
+  }
+
+  ComputeHandle(ComputeContext* ctx, const LoadedModel& loadedModel, bool iNHWC, bool requireExactNNLen_, bool useFP16_)
     : context(ctx),
       inputsUseNHWC(iNHWC),
       requireExactNNLen(requireExactNNLen_),
-      modelCacheKey(loadedModel.modelDesc.name + "-" + loadedModel.modelDesc.sha256),
+      useFP16(useFP16_),
+      modelCacheKey(makeCacheKey(loadedModel, useFP16_)),
       model(nullptr),
       modelVersion(loadedModel.modelDesc.modelVersion),
       compiledFuncsMutex(),
@@ -994,7 +1028,7 @@ struct ComputeHandle {
     {
       std::lock_guard<std::mutex> lock(context->cachedModelsMutex);
       if(context->cachedModels.find(modelCacheKey) == context->cachedModels.end()) {
-        context->cachedModels[modelCacheKey] = std::make_shared<const Model>(loadedModel.modelDesc);
+        context->cachedModels[modelCacheKey] = std::make_shared<const Model>(loadedModel.modelDesc, useFP16);
       }
       model = context->cachedModels[modelCacheKey];
       context->cachedModelsRefCount[modelCacheKey] += 1;
@@ -1013,7 +1047,7 @@ struct ComputeHandle {
 
   // Get or create compiled inference function for the given configuration
   const CompiledInferenceFunc& getCompiledFunc(int batchSize, int nnXLen, int nnYLen, bool useMask, bool hasMeta) const {
-    CompileCacheKey key = std::make_tuple(batchSize, nnXLen, nnYLen, useMask, hasMeta);
+    CompileCacheKey key = std::make_tuple(batchSize, nnXLen, nnYLen, useMask, hasMeta, useFP16);
 
     std::lock_guard<std::mutex> lock(compiledFuncsMutex);
     auto it = compiledFuncs.find(key);
@@ -1129,15 +1163,12 @@ ComputeContext* NeuralNet::createComputeContext(
   (void)openCLReTunePerBoardSize;
   (void)loadedModel;
 
-  bool useFP16 = useFP16Mode == enabled_t::True ? true : false;
   bool useNHWC = useNHWCMode == enabled_t::False ? false : true;
 
-  if(useFP16)
-    throw StringError("MLX backend: useFP16 = true not yet supported");
   if(!useNHWC)
     throw StringError("MLX backend: useNHWC = false not supported");
 
-  ComputeContext* context = new ComputeContext(nnXLen, nnYLen);
+  ComputeContext* context = new ComputeContext(nnXLen, nnYLen, useFP16Mode);
   return context;
 }
 
@@ -1155,9 +1186,13 @@ ComputeHandle* NeuralNet::createComputeHandle(
   int gpuIdxForThisThread,
   int serverThreadIdx
 ) {
+  // Determine FP16 mode: default to FP32 (FP16 doesn't improve performance on MLX)
+  bool useFP16 = (context->useFP16Mode == enabled_t::True);
+
   if(logger != NULL) {
     logger->write("MLX backend thread " + Global::intToString(serverThreadIdx) + ": Model version " + Global::intToString(loadedModel->modelDesc.modelVersion));
     logger->write("MLX backend thread " + Global::intToString(serverThreadIdx) + ": Model name: " + loadedModel->modelDesc.name);
+    logger->write("MLX backend thread " + Global::intToString(serverThreadIdx) + ": FP16 = " + (useFP16 ? "true" : "false"));
   }
 
   (void)maxBatchSize;
@@ -1166,7 +1201,7 @@ ComputeHandle* NeuralNet::createComputeHandle(
   if(!inputsUseNHWC)
     throw StringError("MLX backend: inputsUseNHWC = false unsupported");
 
-  return new ComputeHandle(context, *loadedModel, inputsUseNHWC, requireExactNNLen);
+  return new ComputeHandle(context, *loadedModel, inputsUseNHWC, requireExactNNLen, useFP16);
 }
 
 void NeuralNet::freeComputeHandle(ComputeHandle* gpuHandle) {
@@ -1174,8 +1209,7 @@ void NeuralNet::freeComputeHandle(ComputeHandle* gpuHandle) {
 }
 
 bool NeuralNet::isUsingFP16(const ComputeHandle* handle) {
-  (void)handle;
-  return false;
+  return handle->useFP16;
 }
 
 void NeuralNet::getOutput(
@@ -1360,7 +1394,6 @@ bool NeuralNet::testEvaluateConv(
   const vector<float>& inputBuffer,
   vector<float>& outputBuffer
 ) {
-  (void)useFP16;
   if(!useNHWC) {
     return false; // MLX only supports NHWC
   }
@@ -1368,10 +1401,12 @@ bool NeuralNet::testEvaluateConv(
   size_t numOutputFloats = (size_t)batchSize * nnXLen * nnYLen * desc->outChannels;
   outputBuffer.resize(numOutputFloats);
 
-  ConvLayer layer(*desc);
+  ConvLayer layer(*desc, useFP16);
   mx::Shape inputShape = {batchSize, nnYLen, nnXLen, desc->inChannels};
   mx::array input = mx::array(inputBuffer.data(), inputShape, mx::float32);
-  mx::array output = layer.apply(input);
+  mx::array computeInput = toComputeDtype(input, useFP16);
+  mx::array output = layer.apply(computeInput);
+  if(useFP16) output = mx::astype(output, mx::float32);
   mx::eval(output);
 
   memcpy(outputBuffer.data(), output.data<float>(), numOutputFloats * sizeof(float));
@@ -1389,7 +1424,6 @@ bool NeuralNet::testEvaluateBatchNorm(
   const vector<float>& maskBuffer,
   vector<float>& outputBuffer
 ) {
-  (void)useFP16;
   if(!useNHWC) {
     return false;
   }
@@ -1397,12 +1431,15 @@ bool NeuralNet::testEvaluateBatchNorm(
   size_t numOutputFloats = (size_t)batchSize * nnXLen * nnYLen * desc->numChannels;
   outputBuffer.resize(numOutputFloats);
 
-  BatchNormLayer layer(*desc, ACTIVATION_IDENTITY);
+  BatchNormLayer layer(*desc, ACTIVATION_IDENTITY, useFP16);
   mx::Shape inputShape = {batchSize, nnYLen, nnXLen, desc->numChannels};
   mx::Shape maskShape = {batchSize, nnYLen, nnXLen, 1};
   mx::array input = mx::array(inputBuffer.data(), inputShape, mx::float32);
   mx::array mask = mx::array(maskBuffer.data(), maskShape, mx::float32);
-  mx::array output = layer.apply(input, mask, /*useMask=*/true);
+  mx::array computeInput = toComputeDtype(input, useFP16);
+  mx::array computeMask = toComputeDtype(mask, useFP16);
+  mx::array output = layer.apply(computeInput, computeMask, /*useMask=*/true);
+  if(useFP16) output = mx::astype(output, mx::float32);
   mx::eval(output);
 
   memcpy(outputBuffer.data(), output.data<float>(), numOutputFloats * sizeof(float));
@@ -1420,7 +1457,6 @@ bool NeuralNet::testEvaluateResidualBlock(
   const vector<float>& maskBuffer,
   vector<float>& outputBuffer
 ) {
-  (void)useFP16;
   if(!useNHWC) {
     return false;
   }
@@ -1428,12 +1464,15 @@ bool NeuralNet::testEvaluateResidualBlock(
   size_t numOutputFloats = (size_t)batchSize * nnXLen * nnYLen * desc->preBN.numChannels;
   outputBuffer.resize(numOutputFloats);
 
-  ResidualBlock block(*desc);
+  ResidualBlock block(*desc, useFP16);
   mx::Shape inputShape = {batchSize, nnYLen, nnXLen, desc->preBN.numChannels};
   mx::Shape maskShape = {batchSize, nnYLen, nnXLen, 1};
   mx::array input = mx::array(inputBuffer.data(), inputShape, mx::float32);
   mx::array mask = mx::array(maskBuffer.data(), maskShape, mx::float32);
-  mx::array output = block.apply(input, mask, /*useMask=*/true);
+  mx::array computeInput = toComputeDtype(input, useFP16);
+  mx::array computeMask = toComputeDtype(mask, useFP16);
+  mx::array output = block.apply(computeInput, computeMask, /*useMask=*/true);
+  if(useFP16) output = mx::astype(output, mx::float32);
   mx::eval(output);
 
   memcpy(outputBuffer.data(), output.data<float>(), numOutputFloats * sizeof(float));
@@ -1451,7 +1490,6 @@ bool NeuralNet::testEvaluateGlobalPoolingResidualBlock(
   const vector<float>& maskBuffer,
   vector<float>& outputBuffer
 ) {
-  (void)useFP16;
   if(!useNHWC) {
     return false;
   }
@@ -1459,14 +1497,18 @@ bool NeuralNet::testEvaluateGlobalPoolingResidualBlock(
   size_t numOutputFloats = (size_t)batchSize * nnXLen * nnYLen * desc->preBN.numChannels;
   outputBuffer.resize(numOutputFloats);
 
-  GlobalPoolingResidualBlock block(*desc);
+  GlobalPoolingResidualBlock block(*desc, useFP16);
   mx::Shape inputShape = {batchSize, nnYLen, nnXLen, desc->preBN.numChannels};
   mx::Shape maskShape = {batchSize, nnYLen, nnXLen, 1};
   mx::array input = mx::array(inputBuffer.data(), inputShape, mx::float32);
   mx::array mask = mx::array(maskBuffer.data(), maskShape, mx::float32);
+  mx::array computeInput = toComputeDtype(input, useFP16);
+  mx::array computeMask = toComputeDtype(mask, useFP16);
   std::vector<int> sumAxes = {1, 2};
+  // maskSum stays FP32 for precision
   mx::array maskSum = mx::sum(mask, sumAxes, /*keepdims=*/true);
-  mx::array output = block.apply(input, mask, maskSum, /*useMask=*/true);
+  mx::array output = block.apply(computeInput, computeMask, maskSum, /*useMask=*/true);
+  if(useFP16) output = mx::astype(output, mx::float32);
   mx::eval(output);
 
   memcpy(outputBuffer.data(), output.data<float>(), numOutputFloats * sizeof(float));
