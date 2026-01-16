@@ -24,6 +24,12 @@
 #include <tuple>
 
 namespace mx = mlx::core;
+
+// Type alias for compiled inference functions
+using CompiledInferenceFunc = std::function<std::vector<mx::array>(const std::vector<mx::array>&)>;
+
+// Cache key: (batchSize, nnXLen, nnYLen, useMask, hasMeta)
+using CompileCacheKey = std::tuple<int, int, int, bool, bool>;
 using namespace std;
 
 
@@ -766,6 +772,44 @@ struct Model {
       valueHead(desc.valueHead)
   {}
 
+  // Apply model inference with mx::array inputs directly (for compiled execution)
+  // inputs: [input, inputGlobal, mask, maskSum] or [input, inputGlobal, mask, maskSum, inputMeta]
+  // outputs: [policy, policyPass, value, scoreValue, ownership]
+  std::vector<mx::array> applyArrays(
+    const std::vector<mx::array>& inputs,
+    bool useMask
+  ) const {
+    const mx::array& input = inputs[0];
+    const mx::array& inputGlobalArr = inputs[1];
+    const mx::array& mask = inputs[2];
+    const mx::array& maskSum = inputs[3];
+    const mx::array* inputMetaPtr = (inputs.size() > 4) ? &inputs[4] : nullptr;
+
+    // Apply trunk
+    mx::array trunkOut = trunk.apply(input, inputGlobalArr, inputMetaPtr, mask, maskSum, useMask);
+
+    // Apply policy head
+    auto [policyPass, policy] = policyHead.apply(trunkOut, mask, maskSum, useMask);
+
+    // Apply value head
+    auto [value, scoreValue, ownership] = valueHead.apply(trunkOut, mask, maskSum, useMask);
+
+    return {policy, policyPass, value, scoreValue, ownership};
+  }
+
+  // Create a compiled inference function for the given configuration
+  // hasMeta is used as part of the cache key but not needed in the function itself
+  CompiledInferenceFunc createCompiledFunc(bool useMask, bool /*hasMeta*/) const {
+    // Create lambda that captures this model
+    auto inferenceFunc = [this, useMask](const std::vector<mx::array>& inputs) -> std::vector<mx::array> {
+      return this->applyArrays(inputs, useMask);
+    };
+
+    // Wrap in std::function and compile
+    std::function<std::vector<mx::array>(const std::vector<mx::array>&)> func = inferenceFunc;
+    return mx::compile(func, /*shapeless=*/false);
+  }
+
   void apply(
     const float* inputSpatial,
     const float* inputGlobal,
@@ -829,6 +873,69 @@ struct Model {
     memcpy(scoreValueOut, scoreValue.data<float>(), batchSize * numScoreValueChannels * sizeof(float));
     memcpy(ownershipOut, ownership.data<float>(), batchSize * numOwnershipChannels * nnXLen * nnYLen * sizeof(float));
   }
+
+  // Apply model using a pre-compiled inference function
+  void applyCompiled(
+    const CompiledInferenceFunc& compiledFunc,
+    const float* inputSpatial,
+    const float* inputGlobal,
+    const float* inputMeta,
+    int batchSize,
+    int nnXLen,
+    int nnYLen,
+    bool requireExactNNLen,
+    float* policyOut,
+    float* policyPassOut,
+    float* valueOut,
+    float* scoreValueOut,
+    float* ownershipOut
+  ) const {
+    // Create input tensors - NHWC format
+    mx::Shape inputShape = {batchSize, nnYLen, nnXLen, numInputChannels};
+    mx::array input = mx::array(inputSpatial, inputShape, mx::float32);
+    mx::Shape globalShape = {batchSize, numInputGlobalChannels};
+    mx::array inputGlobalArr = mx::array(inputGlobal, globalShape, mx::float32);
+
+    // Extract mask from first channel of input
+    mx::Shape sliceStart = {0, 0, 0, 0};
+    mx::Shape sliceEnd = {batchSize, nnYLen, nnXLen, 1};
+    mx::array mask = mx::slice(input, sliceStart, sliceEnd);
+
+    // Compute mask sum
+    std::vector<int> sumAxes = {1, 2};
+    mx::array maskSum = requireExactNNLen
+      ? mx::full({batchSize, 1, 1, 1}, static_cast<float>(nnXLen * nnYLen))
+      : mx::sum(mask, sumAxes, /*keepdims=*/true);
+
+    // Build input vector for compiled function
+    std::vector<mx::array> inputs = {input, inputGlobalArr, mask, maskSum};
+
+    // Add metadata if present
+    if(numInputMetaChannels > 0 && inputMeta != nullptr) {
+      mx::Shape metaShape = {batchSize, numInputMetaChannels};
+      inputs.push_back(mx::array(inputMeta, metaShape, mx::float32));
+    }
+
+    // Call compiled function
+    std::vector<mx::array> outputs = compiledFunc(inputs);
+
+    // Force evaluation
+    mx::eval(outputs);
+
+    // Extract results - outputs are [policy, policyPass, value, scoreValue, ownership]
+    mx::array& policy = outputs[0];
+    mx::array& policyPass = outputs[1];
+    mx::array& value = outputs[2];
+    mx::array& scoreValue = outputs[3];
+    mx::array& ownership = outputs[4];
+
+    // Copy results to output buffers
+    memcpy(policyOut, policy.data<float>(), batchSize * numPolicyChannels * nnXLen * nnYLen * sizeof(float));
+    memcpy(policyPassOut, policyPass.data<float>(), batchSize * numPolicyChannels * sizeof(float));
+    memcpy(valueOut, value.data<float>(), batchSize * numValueChannels * sizeof(float));
+    memcpy(scoreValueOut, scoreValue.data<float>(), batchSize * numScoreValueChannels * sizeof(float));
+    memcpy(ownershipOut, ownership.data<float>(), batchSize * numOwnershipChannels * nnXLen * nnYLen * sizeof(float));
+  }
 };
 
 // ComputeContext and ComputeHandle ------------------------------------------------------------------------------------
@@ -866,6 +973,10 @@ struct ComputeHandle {
   std::shared_ptr<const Model> model;
   const int modelVersion;
 
+  // Compiled function cache - keyed by (batchSize, nnXLen, nnYLen, useMask, hasMeta)
+  mutable std::mutex compiledFuncsMutex;
+  mutable std::map<CompileCacheKey, CompiledInferenceFunc> compiledFuncs;
+
   ComputeHandle() = delete;
   ComputeHandle(const ComputeHandle&) = delete;
   ComputeHandle& operator=(const ComputeHandle&) = delete;
@@ -876,7 +987,9 @@ struct ComputeHandle {
       requireExactNNLen(requireExactNNLen_),
       modelCacheKey(loadedModel.modelDesc.name + "-" + loadedModel.modelDesc.sha256),
       model(nullptr),
-      modelVersion(loadedModel.modelDesc.modelVersion)
+      modelVersion(loadedModel.modelDesc.modelVersion),
+      compiledFuncsMutex(),
+      compiledFuncs()
   {
     {
       std::lock_guard<std::mutex> lock(context->cachedModelsMutex);
@@ -896,6 +1009,21 @@ struct ComputeHandle {
       context->cachedModelsRefCount.erase(modelCacheKey);
       context->cachedModels.erase(modelCacheKey);
     }
+  }
+
+  // Get or create compiled inference function for the given configuration
+  const CompiledInferenceFunc& getCompiledFunc(int batchSize, int nnXLen, int nnYLen, bool useMask, bool hasMeta) const {
+    CompileCacheKey key = std::make_tuple(batchSize, nnXLen, nnYLen, useMask, hasMeta);
+
+    std::lock_guard<std::mutex> lock(compiledFuncsMutex);
+    auto it = compiledFuncs.find(key);
+    if(it != compiledFuncs.end()) {
+      return it->second;
+    }
+
+    // Create and cache compiled function
+    compiledFuncs[key] = model->createCompiledFunc(useMask, hasMeta);
+    return compiledFuncs[key];
   }
 };
 
@@ -1097,8 +1225,13 @@ void NeuralNet::getOutput(
     SymmetryHelpers::copyInputsWithSymmetry(rowSpatial, rowSpatialInput, 1, nnYLen, nnXLen, numSpatialFeatures, computeHandle->inputsUseNHWC, inputBufs[nIdx]->symmetry);
   }
 
-  // Run model
-  computeHandle->model->apply(
+  // Run model using compiled function
+  const bool useMask = !computeHandle->requireExactNNLen;
+  const bool hasMeta = (numMetaFeatures > 0);
+  const CompiledInferenceFunc& compiledFunc = computeHandle->getCompiledFunc(batchSize, nnXLen, nnYLen, useMask, hasMeta);
+
+  computeHandle->model->applyCompiled(
+    compiledFunc,
     inputBuffers->spatialInput.data(),
     inputBuffers->globalInput.data(),
     (numMetaFeatures > 0 ? inputBuffers->metaInput.data() : nullptr),
