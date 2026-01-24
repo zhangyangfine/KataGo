@@ -100,6 +100,12 @@ if __name__ == "__main__":
     optional_args.add_argument('-value-weight', help='Value loss weight', type=float, default=0.6)
     optional_args.add_argument('-ownership-weight', help='Ownership loss weight', type=float, default=0.015)
 
+    # QAT arguments
+    optional_args.add_argument('-enable-qat', help='Enable Quantization Aware Training', action='store_true')
+    optional_args.add_argument('-qat-start-epoch', help='Epoch to activate fake quantization', type=int, default=10)
+    optional_args.add_argument('-qat-bits', help='Quantization bit width', type=int, default=8)
+    optional_args.add_argument('-qat-group-size', help='Group size for per-group quantization', type=int, default=32)
+
     # Other options
     optional_args.add_argument('-use-fp16', help='Use mixed precision training', action='store_true')
     optional_args.add_argument('-use-teacher-swa', help='Use SWA weights from teacher', action='store_true')
@@ -381,6 +387,15 @@ def main(args):
     logging.info(f"Student total params: {total_params:,}")
     logging.info(f"Student trainable params: {trainable_params:,}")
 
+    # Apply QAT if enabled
+    enable_qat = args["enable_qat"]
+    qat_start_epoch = args["qat_start_epoch"]
+    if enable_qat:
+        from katago.train.quantize import apply_qat_to_model, set_qat_enabled, count_qat_layers
+        n_wrapped = apply_qat_to_model(student_model, bits=args["qat_bits"], group_size=args["qat_group_size"])
+        set_qat_enabled(student_model, enabled=False)  # warmup phase
+        logging.info(f"QAT: {n_wrapped} layers wrapped, activation at epoch {qat_start_epoch}")
+
     # Create optimizer
     optimizer = torch.optim.AdamW(
         student_model.parameters(),
@@ -493,6 +508,12 @@ def main(args):
             "train_state": train_state,
             "config": student_config,
         }
+        if enable_qat:
+            state["qat_config"] = {
+                "bits": args["qat_bits"],
+                "group_size": args["qat_group_size"],
+                "start_epoch": qat_start_epoch,
+            }
         if path is None:
             path = checkpoint_path
         logging.info(f"Saving checkpoint to: {path}")
@@ -514,6 +535,8 @@ def main(args):
     logging.info(f"Distillation alpha: {args['distill_alpha']}")
     logging.info(f"Temperature: {args['temperature']}")
     logging.info(f"Label smoothing: {args['label_smoothing']}")
+    if enable_qat:
+        logging.info(f"QAT: bits={args['qat_bits']}, group_size={args['qat_group_size']}, start_epoch={qat_start_epoch}")
     logging.info("="*70)
 
     while train_state["epoch"] < max_epochs:
@@ -524,6 +547,13 @@ def main(args):
         logging.info(f"Time: {datetime.datetime.now()}")
         logging.info(f"Global samples: {train_state['global_step_samples']:,}")
         logging.info(f"Learning rate: {scheduler.get_last_lr()[0]:.2e}")
+
+        # Toggle QAT at the specified epoch
+        if enable_qat:
+            qat_active = epoch >= qat_start_epoch
+            set_qat_enabled(student_model, enabled=qat_active)
+            if qat_active:
+                logging.info(f"QAT: fake quantization ENABLED (epoch {epoch} >= {qat_start_epoch})")
 
         gc.collect()
         if torch.cuda.is_available():
@@ -627,6 +657,8 @@ def main(args):
                 avg_metrics = {k: v / running_count for k, v in running_metrics.items()}
                 avg_metrics['lr'] = scheduler.get_last_lr()[0]
                 avg_metrics['samples_per_sec'] = running_count / time_elapsed
+                if enable_qat:
+                    avg_metrics['qat_enabled'] = epoch >= qat_start_epoch
 
                 log_metrics(avg_metrics, train_metrics_file, train_state)
 
