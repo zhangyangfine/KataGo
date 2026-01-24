@@ -1867,17 +1867,18 @@ class Model(torch.nn.Module):
             if self.metadata_encoder is not None:
                 self.metadata_encoder.initialize()
 
-            if self.norm_kind == "fixup":
-                fixup_scale = 1.0 / math.sqrt(self.num_total_blocks)
-                for block in self.blocks:
-                    block.initialize(fixup_scale=fixup_scale)
-            elif self.norm_kind == "fixscale" or self.norm_kind == "fixbrenorm" or self.norm_kind == "fixscaleonenorm":
-                for i, block in enumerate(self.blocks):
-                    block.initialize(fixup_scale=1.0 / math.sqrt(i+1.0))
-                self.norm_trunkfinal.set_scale(1.0 / math.sqrt(self.num_total_blocks+1.0))
-            else:
-                for block in self.blocks:
-                    block.initialize(fixup_scale=1.0)
+            if self.num_total_blocks > 0:
+                if self.norm_kind == "fixup":
+                    fixup_scale = 1.0 / math.sqrt(self.num_total_blocks)
+                    for block in self.blocks:
+                        block.initialize(fixup_scale=fixup_scale)
+                elif self.norm_kind == "fixscale" or self.norm_kind == "fixbrenorm" or self.norm_kind == "fixscaleonenorm":
+                    for i, block in enumerate(self.blocks):
+                        block.initialize(fixup_scale=1.0 / math.sqrt(i+1.0))
+                    self.norm_trunkfinal.set_scale(1.0 / math.sqrt(self.num_total_blocks+1.0))
+                else:
+                    for block in self.blocks:
+                        block.initialize(fixup_scale=1.0)
 
             self.policy_head.initialize()
             self.value_head.initialize()
