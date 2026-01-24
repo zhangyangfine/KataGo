@@ -24,22 +24,32 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-# Define runs to compare
+# Define runs to compare (top 3 variants)
 RUNS = [
     {
-        "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9",
-        "label": r"Original ($\alpha$=0.5, T=4)",
-        "color": "#2E86AB",
+        "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-a",
+        "label": r"A: Pure ($\alpha$=1.0, T=1)",
+        "color": "#1ABC9C",
     },
     {
-        "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9-v1-alpha",
-        "label": r"V1: $\alpha$=0.9, T=2",
-        "color": "#A23B72",
+        "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-b",
+        "label": r"B: Sharp ($\alpha$=0.9, T=1)",
+        "color": "#9467BD",
     },
     {
-        "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9-v2-schedule",
-        "label": "V2: LR=2e-3, BS=64",
-        "color": "#F18F01",
+        "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-c",
+        "label": r"C: Sharp+Sched ($\alpha$=0.9, T=1, BS=64)",
+        "color": "#E74C3C",
+    },
+    {
+        "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-d",
+        "label": "D: AllAttn ft6c96a",
+        "color": "#3498DB",
+    },
+    {
+        "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-e",
+        "label": "E: DeepAttn ft8c96a",
+        "color": "#F39C12",
     },
 ]
 
@@ -104,9 +114,9 @@ def create_comparison_plot(runs, save_path=None, smooth_window=20):
 
     # Create figure with subplots
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-    fig.suptitle('9x9 Distillation Training Comparison (ft6c96)', fontsize=14, fontweight='bold')
+    fig.suptitle('9x9 Distillation Training Comparison (FastVIT variants)', fontsize=14, fontweight='bold')
 
-    linestyles = ['-', '--', ':']
+    linestyles = ['-', '--', ':', '-.', (0, (3, 1, 1, 1))]
 
     # ==========================
     # Panel 1: Policy Loss (combined)
@@ -116,7 +126,7 @@ def create_comparison_plot(runs, save_path=None, smooth_window=20):
         if 'policy_loss' in rd['metrics']:
             data = np.array(rd['metrics']['policy_loss'])
             ax1.plot(rd['samples'], smooth_data(data, smooth_window),
-                     color=rd['color'], linewidth=2, linestyle=linestyles[i % 3],
+                     color=rd['color'], linewidth=2, linestyle=linestyles[i % len(linestyles)],
                      label=rd['label'])
             ax1.plot(rd['samples'], data, alpha=0.15, color=rd['color'], linewidth=0.5)
 
@@ -134,7 +144,7 @@ def create_comparison_plot(runs, save_path=None, smooth_window=20):
         if 'value_loss' in rd['metrics']:
             data = np.array(rd['metrics']['value_loss'])
             ax2.plot(rd['samples'], smooth_data(data, smooth_window),
-                     color=rd['color'], linewidth=2, linestyle=linestyles[i % 3],
+                     color=rd['color'], linewidth=2, linestyle=linestyles[i % len(linestyles)],
                      label=rd['label'])
             ax2.plot(rd['samples'], data, alpha=0.15, color=rd['color'], linewidth=0.5)
 
@@ -152,7 +162,7 @@ def create_comparison_plot(runs, save_path=None, smooth_window=20):
         if 'soft_policy_loss' in rd['metrics']:
             data = np.array(rd['metrics']['soft_policy_loss'])
             ax3.plot(rd['samples'], smooth_data(data, smooth_window),
-                     color=rd['color'], linewidth=2, linestyle=linestyles[i % 3],
+                     color=rd['color'], linewidth=2, linestyle=linestyles[i % len(linestyles)],
                      label=rd['label'])
             ax3.plot(rd['samples'], data, alpha=0.15, color=rd['color'], linewidth=0.5)
 
@@ -170,7 +180,7 @@ def create_comparison_plot(runs, save_path=None, smooth_window=20):
         if 'total_loss' in rd['metrics']:
             data = np.array(rd['metrics']['total_loss'])
             ax4.plot(rd['samples'], smooth_data(data, smooth_window),
-                     color=rd['color'], linewidth=2, linestyle=linestyles[i % 3],
+                     color=rd['color'], linewidth=2, linestyle=linestyles[i % len(linestyles)],
                      label=rd['label'])
             ax4.plot(rd['samples'], data, alpha=0.15, color=rd['color'], linewidth=0.5)
 

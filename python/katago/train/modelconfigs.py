@@ -1439,6 +1439,76 @@ ft6c96 = {
     },
 }
 
+ft6c96a = {
+    "version":15,
+    "norm_kind":"fixup",
+    "bnorm_epsilon": 1e-4,
+    "bnorm_running_avg_momentum": 0.001,
+    "initial_conv_1x1": False,
+    "initial_num_channels":96,
+    "trunk_num_channels":96,
+    "mid_num_channels":96,
+    "gpool_num_channels":32,
+    "use_attention_pool":False,
+    "num_attention_pool_heads":4,
+    "block_kind": [],
+    "turnkfinal_num_channels":96,
+    "policy_input_channels":96,
+    "p1_num_channels":32,
+    "g1_num_channels":32,
+    "v1_num_channels":32,
+    "sbv2_num_channels":48,
+    "num_scorebeliefs":4,
+    "v2_size":64,
+    "fastvit_insertion_points": [
+        "after_trunk",
+    ],
+    "fastvit_configs": {
+        "after_trunk": {
+            "layers": [2, 2, 2],
+            "embed_dim": [96, 96, 96],
+            "mlp_ratio": [3.0, 3.0, 3.0],
+            "token_mixer": ["attention", "attention", "attention"],
+            "pos_embed": [partial(PositionalEncoding), partial(PositionalEncoding), partial(PositionalEncoding)],
+        },
+    },
+}
+
+ft8c96a = {
+    "version":15,
+    "norm_kind":"fixup",
+    "bnorm_epsilon": 1e-4,
+    "bnorm_running_avg_momentum": 0.001,
+    "initial_conv_1x1": False,
+    "initial_num_channels":96,
+    "trunk_num_channels":96,
+    "mid_num_channels":96,
+    "gpool_num_channels":32,
+    "use_attention_pool":False,
+    "num_attention_pool_heads":4,
+    "block_kind": [],
+    "turnkfinal_num_channels":96,
+    "policy_input_channels":96,
+    "p1_num_channels":32,
+    "g1_num_channels":32,
+    "v1_num_channels":32,
+    "sbv2_num_channels":48,
+    "num_scorebeliefs":4,
+    "v2_size":64,
+    "fastvit_insertion_points": [
+        "after_trunk",
+    ],
+    "fastvit_configs": {
+        "after_trunk": {
+            "layers": [2, 2, 2, 2],
+            "embed_dim": [96, 96, 96, 96],
+            "mlp_ratio": [4.0, 4.0, 4.0, 4.0],
+            "token_mixer": ["attention", "attention", "attention", "attention"],
+            "pos_embed": [partial(PositionalEncoding), partial(PositionalEncoding), partial(PositionalEncoding), partial(PositionalEncoding)],
+        },
+    },
+}
+
 ft6c192 = {
     "version":15,
     "norm_kind":"fixup",
@@ -1774,6 +1844,8 @@ base_config_of_name = {
 
     # FastViT
     "ft6c96": ft6c96,
+    "ft6c96a": ft6c96a,
+    "ft8c96a": ft8c96a,
     "ft6c192": ft6c192,
     "ft6c384": ft6c384,
     "ft12c96": ft12c96,
