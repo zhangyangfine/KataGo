@@ -70,7 +70,8 @@ def read_npz_training_data(
             # Just discard stuff that doesn't divide evenly
             num_whole_steps = num_samples // (batch_size * world_size)
 
-            logging.info(f"Beginning {npz_file} with {num_whole_steps * world_size} usable batches, my rank is {rank}")
+            if num_whole_steps > 0:
+                logging.info(f"Beginning {npz_file} with {num_whole_steps * world_size} usable batches, my rank is {rank}")
 
             if next_file is not None:
                 logging.info(f"Preloading {next_file} while processing this file")

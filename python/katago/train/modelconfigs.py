@@ -19,7 +19,10 @@ well or best: "-fson-mish-rvgl-bnh"
   but the latter is used for inference.
 """
 
+from functools import partial
 from typing import Dict, Any, Union
+
+from ..train.fastvit import PositionalEncoding
 
 ModelConfig = Dict[str,Any]
 
@@ -1401,6 +1404,286 @@ b20c640nbt = {
     "v2_size":144,
 }
 
+ft6c96 = {
+    "version":15,
+    "norm_kind":"fixup",
+    "bnorm_epsilon": 1e-4,
+    "bnorm_running_avg_momentum": 0.001,
+    "initial_conv_1x1": False,
+    "initial_num_channels":96,
+    "trunk_num_channels":96,
+    "mid_num_channels":96,
+    "gpool_num_channels":32,
+    "use_attention_pool":False,
+    "num_attention_pool_heads":4,
+    "block_kind": [],
+    "turnkfinal_num_channels":96,
+    "policy_input_channels":96,
+    "p1_num_channels":32,
+    "g1_num_channels":32,
+    "v1_num_channels":32,
+    "sbv2_num_channels":48,
+    "num_scorebeliefs":4,
+    "v2_size":64,
+    "fastvit_insertion_points": [
+        "after_trunk",
+    ],
+    "fastvit_configs": {
+        "after_trunk": {
+            "layers": [2, 2, 2],
+            "embed_dim": [96, 96, 96],
+            "mlp_ratio": [3.0, 3.0, 3.0],
+            "token_mixer": ["mixer", "mixer", "attention"],
+            "pos_embed": [None, None, partial(PositionalEncoding)],
+        },
+    },
+}
+
+ft6c192 = {
+    "version":15,
+    "norm_kind":"fixup",
+    "bnorm_epsilon": 1e-4,
+    "bnorm_running_avg_momentum": 0.001,
+    "initial_conv_1x1": False,
+    "initial_num_channels":192,
+    "trunk_num_channels":192,
+    "mid_num_channels":192,
+    "gpool_num_channels":64,
+    "use_attention_pool":False,
+    "num_attention_pool_heads":4,
+    "block_kind": [],
+    "turnkfinal_num_channels":192,
+    "policy_input_channels":192,
+    "p1_num_channels":32,
+    "g1_num_channels":32,
+    "v1_num_channels":32,
+    "sbv2_num_channels":80,
+    "num_scorebeliefs":8,
+    "v2_size":96,
+    "fastvit_insertion_points": [
+        "after_trunk",
+    ],
+    "fastvit_configs": {
+        "after_trunk": {
+            "layers": [2, 2, 2],
+            "embed_dim": [192, 192, 192],
+            "mlp_ratio": [3.0, 3.0, 3.0],
+            "token_mixer": ["mixer", "mixer", "attention"],
+            "pos_embed": [None, None, partial(PositionalEncoding)],
+        },
+    },
+}
+
+ft6c384 = {
+    "version":15,
+    "norm_kind":"fixup",
+    "bnorm_epsilon": 1e-4,
+    "bnorm_running_avg_momentum": 0.001,
+    "initial_conv_1x1": False,
+    "initial_num_channels":384,
+    "trunk_num_channels":384,
+    "mid_num_channels":384,
+    "gpool_num_channels":128,
+    "use_attention_pool":False,
+    "num_attention_pool_heads":4,
+    "block_kind": [],
+    "turnkfinal_num_channels":384,
+    "policy_input_channels":384,
+    "p1_num_channels":64,
+    "g1_num_channels":64,
+    "v1_num_channels":96,
+    "sbv2_num_channels":128,
+    "num_scorebeliefs":8,
+    "v2_size":144,
+    "fastvit_insertion_points": [
+        "after_trunk",
+    ],
+    "fastvit_configs": {
+        "after_trunk": {
+            "layers": [2, 2, 2],
+            "embed_dim": [384, 384, 384],
+            "mlp_ratio": [3.0, 3.0, 3.0],
+            "token_mixer": ["mixer", "mixer", "attention"],
+            "pos_embed": [None, None, partial(PositionalEncoding)],
+        },
+    },
+}
+
+ft12c96 = {
+    "version":15,
+    "norm_kind":"fixup",
+    "bnorm_epsilon": 1e-4,
+    "bnorm_running_avg_momentum": 0.001,
+    "initial_conv_1x1": False,
+    "initial_num_channels":96,
+    "trunk_num_channels":96,
+    "mid_num_channels":96,
+    "gpool_num_channels":32,
+    "use_attention_pool":False,
+    "num_attention_pool_heads":4,
+    "block_kind": [],
+    "turnkfinal_num_channels":96,
+    "policy_input_channels":96,
+    "p1_num_channels":32,
+    "g1_num_channels":32,
+    "v1_num_channels":32,
+    "sbv2_num_channels":48,
+    "num_scorebeliefs":4,
+    "v2_size":64,
+    "fastvit_insertion_points": [
+        "after_trunk",
+    ],
+    "fastvit_configs": {
+        "after_trunk": {
+            "layers": [2, 2, 6, 2],
+            "embed_dim": [96, 96, 96, 96],
+            "mlp_ratio": [4.0, 4.0, 4.0, 4.0],
+            "token_mixer": ["mixer", "mixer", "mixer", "attention"],
+            "pos_embed": [None, None, None, partial(PositionalEncoding)],
+        },
+    },
+}
+
+ft12c192 = {
+    "version":15,
+    "norm_kind":"fixup",
+    "bnorm_epsilon": 1e-4,
+    "bnorm_running_avg_momentum": 0.001,
+    "initial_conv_1x1": False,
+    "initial_num_channels":192,
+    "trunk_num_channels":192,
+    "mid_num_channels":192,
+    "gpool_num_channels":64,
+    "use_attention_pool":False,
+    "num_attention_pool_heads":4,
+    "block_kind": [],
+    "turnkfinal_num_channels":192,
+    "policy_input_channels":192,
+    "p1_num_channels":32,
+    "g1_num_channels":32,
+    "v1_num_channels":32,
+    "sbv2_num_channels":80,
+    "num_scorebeliefs":8,
+    "v2_size":96,
+    "fastvit_insertion_points": [
+        "after_trunk",
+    ],
+    "fastvit_configs": {
+        "after_trunk": {
+            "layers": [2, 2, 6, 2],
+            "embed_dim": [192, 192, 192, 192],
+            "mlp_ratio": [4.0, 4.0, 4.0, 4.0],
+            "token_mixer": ["mixer", "mixer", "mixer", "attention"],
+            "pos_embed": [None, None, None, partial(PositionalEncoding)],
+        },
+    },
+}
+
+ft12c384 = {
+    "version":15,
+    "norm_kind":"fixup",
+    "bnorm_epsilon": 1e-4,
+    "bnorm_running_avg_momentum": 0.001,
+    "initial_conv_1x1": False,
+    "initial_num_channels":384,
+    "trunk_num_channels":384,
+    "mid_num_channels":384,
+    "gpool_num_channels":128,
+    "use_attention_pool":False,
+    "num_attention_pool_heads":4,
+    "block_kind": [],
+    "turnkfinal_num_channels":384,
+    "policy_input_channels":384,
+    "p1_num_channels":64,
+    "g1_num_channels":64,
+    "v1_num_channels":96,
+    "sbv2_num_channels":128,
+    "num_scorebeliefs":8,
+    "v2_size":144,
+    "fastvit_insertion_points": [
+        "after_trunk",
+    ],
+    "fastvit_configs": {
+        "after_trunk": {
+            "layers": [2, 2, 6, 2],
+            "embed_dim": [384, 384, 384, 384],
+            "mlp_ratio": [4.0, 4.0, 4.0, 4.0],
+            "token_mixer": ["mixer", "mixer", "mixer", "attention"],
+            "pos_embed": [None, None, None, partial(PositionalEncoding)],
+        },
+    },
+}
+
+ft12c512 = {
+    "version":15,
+    "norm_kind":"fixup",
+    "bnorm_epsilon": 1e-4,
+    "bnorm_running_avg_momentum": 0.001,
+    "initial_conv_1x1": False,
+    "initial_num_channels":512,
+    "trunk_num_channels":512,
+    "mid_num_channels":256,
+    "gpool_num_channels":64,
+    "use_attention_pool":False,
+    "num_attention_pool_heads":4,
+    "block_kind": [],
+    "turnkfinal_num_channels":512,
+    "policy_input_channels":512,
+    "p1_num_channels":64,
+    "g1_num_channels":64,
+    "v1_num_channels":128,
+    "sbv2_num_channels":128,
+    "num_scorebeliefs":8,
+    "v2_size":144,
+    "fastvit_insertion_points": [
+        "after_trunk",
+    ],
+    "fastvit_configs": {
+        "after_trunk": {
+            "layers": [2, 2, 6, 2],
+            "embed_dim": [512, 512, 512, 512],
+            "mlp_ratio": [4.0, 4.0, 4.0, 4.0],
+            "token_mixer": ["mixer", "mixer", "mixer", "attention"],
+            "pos_embed": [None, None, None, partial(PositionalEncoding)],
+        },
+    },
+}
+
+ft24c192 = {
+    "version":15,
+    "norm_kind":"fixup",
+    "bnorm_epsilon": 1e-4,
+    "bnorm_running_avg_momentum": 0.001,
+    "initial_conv_1x1": False,
+    "initial_num_channels":192,
+    "trunk_num_channels":192,
+    "mid_num_channels":192,
+    "gpool_num_channels":64,
+    "use_attention_pool":False,
+    "num_attention_pool_heads":4,
+    "block_kind": [],
+    "turnkfinal_num_channels":192,
+    "policy_input_channels":192,
+    "p1_num_channels":32,
+    "g1_num_channels":32,
+    "v1_num_channels":32,
+    "sbv2_num_channels":80,
+    "num_scorebeliefs":8,
+    "v2_size":96,
+    "fastvit_insertion_points": [
+        "after_trunk",
+    ],
+    "fastvit_configs": {
+        "after_trunk": {
+            "layers": [4, 4, 12, 4],
+            "embed_dim": [192, 192, 192, 192],
+            "mlp_ratio": [4.0, 4.0, 4.0, 4.0],
+            "token_mixer": ["mixer", "mixer", "mixer", "attention"],
+            "pos_embed": [None, None, None, partial(PositionalEncoding)],
+        },
+    },
+}
+
 sandbox = {
     "version":15,
     "norm_kind":"fixup",
@@ -1488,6 +1771,16 @@ base_config_of_name = {
     "b32c448nbt": b32c448nbt,
     "b28c512nbt": b28c512nbt,  # Recommended best config for this cost
     "b20c640nbt": b20c640nbt,
+
+    # FastViT
+    "ft6c96": ft6c96,
+    "ft6c192": ft6c192,
+    "ft6c384": ft6c384,
+    "ft12c96": ft12c96,
+    "ft12c192": ft12c192,
+    "ft12c384": ft12c384,
+    "ft12c512": ft12c512,
+    "ft24c192": ft24c192,
 
     "sandbox": sandbox,
 }
