@@ -562,7 +562,7 @@ def main(args):
         # Get training files
         train_files = get_train_files()
         if len(train_files) == 0:
-            logging.error(f"No training files found in {train_data_dir}")
+            logging.error(f"No training files found in {datadir}")
             break
         np.random.shuffle(train_files)
         logging.info(f"Found {len(train_files)} training files")

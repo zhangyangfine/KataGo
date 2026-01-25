@@ -1645,7 +1645,7 @@ class Model(torch.nn.Module):
         self.block_kind = config["block_kind"]
         self.c_trunk = config["trunk_num_channels"]
         self.c_initial = config.get("initial_num_channels", self.c_trunk)
-        self.c_trunkfinal = config.get("turnkfinal_num_channels", self.c_trunk)
+        self.c_trunkfinal = config.get("trunkfinal_num_channels", self.c_trunk)
         self.c_mid = config["mid_num_channels"]
         self.c_gpool = config["gpool_num_channels"]
         self.c_outermid = config["outermid_num_channels"] if "outermid_num_channels" in config else self.c_mid
