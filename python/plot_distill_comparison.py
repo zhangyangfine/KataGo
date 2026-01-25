@@ -32,11 +32,6 @@ RUNS = [
         "color": "#2ECC71",
     },
     {
-        "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-x",
-        "label": "X: ExtremeFFN ft6c96x",
-        "color": "#E74C3C",
-    },
-    {
         "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-w",
         "label": "W: WideChannels ft6c384 (QAT)",
         "color": "#8E44AD",
@@ -67,7 +62,6 @@ RUNS = [
 MLX_BENCHMARK = {
     "b6c96":   {"fp32": 1.329, "int8": 1.143},
     "b10c128": {"fp32": 2.001, "int8": 2.072},
-    "ft6c96x": {"fp32": 2.165, "int8": 1.958},
     "ft6c384": {"fp32": 1.831, "int8": 1.416},
     "ft12c384": {"fp32": 3.426, "int8": 2.384},
 }
