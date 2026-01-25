@@ -32,7 +32,6 @@ import json
 import datetime
 from datetime import timezone
 import gc
-import shutil
 from collections import defaultdict
 from typing import Dict, List
 
@@ -40,7 +39,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.amp import GradScaler, autocast
 
 from katago.train import modelconfigs
 from katago.train.model_pytorch import Model
@@ -107,7 +105,6 @@ if __name__ == "__main__":
     optional_args.add_argument('-qat-group-size', help='Group size for per-group quantization', type=int, default=32)
 
     # Other options
-    optional_args.add_argument('-use-fp16', help='Use mixed precision training', action='store_true')
     optional_args.add_argument('-use-teacher-swa', help='Use SWA weights from teacher', action='store_true')
     optional_args.add_argument('-save-every', help='Save checkpoint every N epochs', type=int, default=1)
     optional_args.add_argument('-log-every', help='Log metrics every N batches', type=int, default=100)
@@ -177,7 +174,7 @@ class CosineWarmupScheduler:
             return self.base_lrs[0] * (self.current_step / self.warmup_steps)
         else:
             # Cosine decay
-            progress = (self.current_step - self.warmup_steps) / (self.total_steps - self.warmup_steps)
+            progress = (self.current_step - self.warmup_steps) / max(1, self.total_steps - self.warmup_steps)
             return self.min_lr + 0.5 * (self.base_lrs[0] - self.min_lr) * (1 + math.cos(math.pi * progress))
 
     def get_last_lr(self):
@@ -313,7 +310,6 @@ def main(args):
     weight_decay = args["weight_decay"]
     ema_decay = args["ema_decay"]
 
-    use_fp16 = args["use_fp16"]
     use_teacher_swa = args["use_teacher_swa"]
     save_every = args["save_every"]
     log_every = args["log_every"]
@@ -451,14 +447,6 @@ def main(args):
             train_state = state_dict["train_state"]
         logging.info(f"Resumed from epoch {train_state['epoch']}")
 
-    # Mixed precision scaler
-    if use_fp16:
-        scaler = GradScaler()
-        logging.info("Using FP16 mixed precision training")
-    else:
-        scaler = None
-        logging.info("Using FP32 training")
-
     # =============================================
     # Data Loading
     # =============================================
@@ -489,10 +477,7 @@ def main(args):
         files = glob_module.glob(datadir, recursive=True)
         return sorted([f for f in files if f.endswith(".npz")])
 
-    # Open metrics files
-    train_metrics_file = open(os.path.join(traindir, "metrics_train.json"), "a")
-
-    try:
+    with open(os.path.join(traindir, "metrics_train.json"), "a") as train_metrics_file:
         # =============================================
         # Save function
         # =============================================
@@ -585,46 +570,24 @@ def main(args):
                 optimizer.zero_grad(set_to_none=True)
 
                 # Forward pass
-                if use_fp16:
-                    with autocast(device_type=device.type):
-                        with torch.no_grad():
-                            teacher_outputs = teacher_model(
-                                batch["binaryInputNCHW"],
-                                batch["globalInputNC"],
-                            )
-                        student_outputs = student_model(
-                            batch["binaryInputNCHW"],
-                            batch["globalInputNC"],
-                        )
-                    # Convert to float32 for loss computation
-                    student_outputs = student_model.float32ify_output(student_outputs)
-                    teacher_outputs = teacher_model.float32ify_output(teacher_outputs)
-                else:
-                    with torch.no_grad():
-                        teacher_outputs = teacher_model(
-                            batch["binaryInputNCHW"],
-                            batch["globalInputNC"],
-                        )
-                    student_outputs = student_model(
+                with torch.no_grad():
+                    teacher_outputs = teacher_model(
                         batch["binaryInputNCHW"],
                         batch["globalInputNC"],
                     )
+                student_outputs = student_model(
+                    batch["binaryInputNCHW"],
+                    batch["globalInputNC"],
+                )
 
                 # Compute loss
                 losses = compute_distillation_loss(student_outputs, teacher_outputs, batch, args)
                 loss = losses['total_loss']
 
                 # Backward pass
-                if use_fp16:
-                    scaler.scale(loss).backward()
-                    scaler.unscale_(optimizer)
-                    torch.nn.utils.clip_grad_norm_(student_model.parameters(), 1.0)
-                    scaler.step(optimizer)
-                    scaler.update()
-                else:
-                    loss.backward()
-                    torch.nn.utils.clip_grad_norm_(student_model.parameters(), 1.0)
-                    optimizer.step()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(student_model.parameters(), 1.0)
+                optimizer.step()
 
                 # Update scheduler
                 scheduler.step()
@@ -691,8 +654,6 @@ def main(args):
         # Final save
         save_checkpoint()
         logging.info("Training completed!")
-    finally:
-        train_metrics_file.close()
 
 
 if __name__ == "__main__":
