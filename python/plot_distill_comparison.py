@@ -37,10 +37,9 @@ import numpy as np
 VARIANT_STYLES = {
     "f":  {"label": "F: ResNet b6c96", "color": "#2ECC71"},
     "g":  {"label": "G: ResNet b10c128", "color": "#3498DB"},
-    "w":  {"label": "W: WideChannels ft6c384 (QAT)", "color": "#8E44AD"},
     "z":  {"label": "Z: Aggressive ft6c384 (LR=2x, QAT@5)", "color": "#1ABC9C"},
-    "aa": {"label": "AA: Hyper ft6c384 (LR=3x, QAT@3)", "color": "#E67E22"},
-    "ab": {"label": "AB: Deep ft12c384 (4-stage)", "color": "#9B59B6"},
+    "ac": {"label": "AC: Batch 2x ft6c384 (batch=64)", "color": "#E67E22"},
+    "ae": {"label": "AE: Later QAT ft6c384 (QAT@10)", "color": "#9B59B6"},
 }
 
 # Default color cycle for unknown variants
@@ -108,7 +107,6 @@ MLX_BENCHMARK = {
     "b6c96":   {"fp32": 1.329, "int8": 1.143},
     "b10c128": {"fp32": 2.001, "int8": 2.072},
     "ft6c384": {"fp32": 1.831, "int8": 1.416},
-    "ft12c384": {"fp32": 3.426, "int8": 2.384},
 }
 
 
