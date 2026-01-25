@@ -2,13 +2,11 @@
 """
 Plot Comparison of Multiple Distillation Training Runs
 
-Creates a 6-panel plot comparing loss curves across training variants:
+Creates a 4-panel plot comparing loss curves across training variants:
 1. Policy Loss (combined) - all runs
 2. Value Loss (combined) - all runs
-3. Soft Policy Loss - all runs (key distillation quality metric)
-4. Total Loss - all runs
-5. Learning Rate (cosine decay) - all runs
-6. MLX Inference Time (FP32 vs INT8 bar chart)
+3. Learning Rate (cosine decay) - all runs
+4. MLX Inference Time (FP32 vs INT8 bar chart)
 
 Usage:
     python plot_distill_comparison.py --save output.png
@@ -47,6 +45,11 @@ RUNS = [
         "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-w",
         "label": "W: WideChannels ft6c384 (QAT)",
         "color": "#8E44AD",
+    },
+    {
+        "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-a-qat",
+        "label": "A-QAT: ft6c96 (QAT)",
+        "color": "#F39C12",
     },
 ]
 
@@ -118,7 +121,7 @@ def create_comparison_plot(runs, save_path=None, smooth_window=20):
         return False
 
     # Create figure with subplots
-    fig, axes = plt.subplots(3, 2, figsize=(14, 15))
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
     fig.suptitle('9x9 Distillation Training Comparison (FastVIT variants)', fontsize=14, fontweight='bold')
 
     linestyles = ['-', '--', ':', '-.', (0, (3, 1, 1, 1))]
@@ -160,63 +163,27 @@ def create_comparison_plot(runs, save_path=None, smooth_window=20):
     ax2.grid(True, alpha=0.3)
 
     # ==========================
-    # Panel 3: Soft Policy Loss (key metric)
+    # Panel 3: Learning Rate (Cosine Decay)
     # ==========================
     ax3 = axes[1, 0]
     for i, rd in enumerate(run_data):
-        if 'soft_policy_loss' in rd['metrics']:
-            data = np.array(rd['metrics']['soft_policy_loss'])
-            ax3.plot(rd['samples'], smooth_data(data, smooth_window),
-                     color=rd['color'], linewidth=2, linestyle=linestyles[i % len(linestyles)],
-                     label=rd['label'])
-            ax3.plot(rd['samples'], data, alpha=0.15, color=rd['color'], linewidth=0.5)
-
-    ax3.set_xlabel('Samples')
-    ax3.set_ylabel('Soft Policy Loss')
-    ax3.set_title('Soft Policy Loss (Distillation Quality)')
-    ax3.legend(loc='upper right', fontsize=8)
-    ax3.grid(True, alpha=0.3)
-
-    # ==========================
-    # Panel 4: Total Loss
-    # ==========================
-    ax4 = axes[1, 1]
-    for i, rd in enumerate(run_data):
-        if 'total_loss' in rd['metrics']:
-            data = np.array(rd['metrics']['total_loss'])
-            ax4.plot(rd['samples'], smooth_data(data, smooth_window),
-                     color=rd['color'], linewidth=2, linestyle=linestyles[i % len(linestyles)],
-                     label=rd['label'])
-            ax4.plot(rd['samples'], data, alpha=0.15, color=rd['color'], linewidth=0.5)
-
-    ax4.set_xlabel('Samples')
-    ax4.set_ylabel('Total Loss')
-    ax4.set_title('Total Loss')
-    ax4.legend(loc='upper right', fontsize=8)
-    ax4.grid(True, alpha=0.3)
-
-    # ==========================
-    # Panel 5: Learning Rate (Cosine Decay)
-    # ==========================
-    ax5 = axes[2, 0]
-    for i, rd in enumerate(run_data):
         if 'lr' in rd['metrics']:
             data = np.array(rd['metrics']['lr'])
-            ax5.plot(rd['samples'], data, color=rd['color'],
+            ax3.plot(rd['samples'], data, color=rd['color'],
                      linewidth=2, linestyle=linestyles[i % len(linestyles)],
                      label=rd['label'])
 
-    ax5.set_xlabel('Samples')
-    ax5.set_ylabel('Learning Rate')
-    ax5.set_title('Learning Rate (Cosine Decay)')
-    ax5.legend(loc='upper right', fontsize=8)
-    ax5.grid(True, alpha=0.3)
-    ax5.ticklabel_format(style='scientific', axis='y', scilimits=(0, 0))
+    ax3.set_xlabel('Samples')
+    ax3.set_ylabel('Learning Rate')
+    ax3.set_title('Learning Rate (Cosine Decay)')
+    ax3.legend(loc='upper right', fontsize=8)
+    ax3.grid(True, alpha=0.3)
+    ax3.ticklabel_format(style='scientific', axis='y', scilimits=(0, 0))
 
     # ==========================
-    # Panel 6: MLX Inference Time (Bar Chart)
+    # Panel 4: MLX Inference Time (Bar Chart)
     # ==========================
-    ax6 = axes[2, 1]
+    ax4 = axes[1, 1]
     models = list(MLX_BENCHMARK.keys())
     x = np.arange(len(models))
     width = 0.35
@@ -224,21 +191,21 @@ def create_comparison_plot(runs, save_path=None, smooth_window=20):
     fp32_vals = [MLX_BENCHMARK[m]['fp32'] for m in models]
     int8_vals = [MLX_BENCHMARK[m]['int8'] for m in models]
 
-    ax6.bar(x - width/2, fp32_vals, width, label='FP32', color='#3498DB')
-    ax6.bar(x + width/2, int8_vals, width, label='INT8', color='#2ECC71')
+    ax4.bar(x - width/2, fp32_vals, width, label='FP32', color='#3498DB')
+    ax4.bar(x + width/2, int8_vals, width, label='INT8', color='#2ECC71')
 
-    ax6.set_xlabel('Model')
-    ax6.set_ylabel('Latency (ms)')
-    ax6.set_title('MLX Inference Time (9x9, batch=1, median)')
-    ax6.set_xticks(x)
-    ax6.set_xticklabels(models, rotation=45, ha='right')
-    ax6.legend()
-    ax6.grid(True, alpha=0.3, axis='y')
+    ax4.set_xlabel('Model')
+    ax4.set_ylabel('Latency (ms)')
+    ax4.set_title('MLX Inference Time (9x9, batch=1, median)')
+    ax4.set_xticks(x)
+    ax4.set_xticklabels(models, rotation=45, ha='right')
+    ax4.legend()
+    ax4.grid(True, alpha=0.3, axis='y')
 
     # Add speedup annotations
     for i, (f, i8) in enumerate(zip(fp32_vals, int8_vals)):
         speedup = f / i8
-        ax6.annotate(f'{speedup:.2f}x', xy=(x[i] + width/2, i8),
+        ax4.annotate(f'{speedup:.2f}x', xy=(x[i] + width/2, i8),
                      xytext=(0, 3), textcoords='offset points',
                      ha='center', fontsize=7)
 
