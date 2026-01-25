@@ -162,6 +162,12 @@ class CosineWarmupScheduler:
         self.base_lrs = [group['lr'] for group in optimizer.param_groups]
         self.current_step = 0
 
+        if total_steps <= warmup_steps:
+            logging.warning(
+                f"CosineWarmupScheduler: total_steps ({total_steps}) <= warmup_steps ({warmup_steps}). "
+                "LR will remain at peak after warmup with no cosine decay."
+            )
+
     def step(self):
         self.current_step += 1
         lr = self.get_lr()
