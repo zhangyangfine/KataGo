@@ -40,7 +40,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.cuda.amp import GradScaler, autocast
+from torch.amp import GradScaler, autocast
 
 from katago.train import modelconfigs
 from katago.train.model_pytorch import Model
@@ -344,6 +344,9 @@ def main(args):
         device = torch.device("cpu")
         logging.warning("WARNING: No GPU, using CPU")
 
+    # Enable cuDNN benchmark for faster convolutions
+    torch.backends.cudnn.benchmark = True
+
     # Seed
     seed = int.from_bytes(os.urandom(7), sys.byteorder)
     logging.info(f"Seeding torch with {seed}")
@@ -494,7 +497,6 @@ def main(args):
 
     # Open metrics files
     train_metrics_file = open(os.path.join(traindir, "metrics_train.json"), "a")
-    val_metrics_file = open(os.path.join(traindir, "metrics_val.json"), "a")
 
     # =============================================
     # Save function
@@ -524,7 +526,6 @@ def main(args):
     # =============================================
     # Training Loop
     # =============================================
-    torch.backends.cudnn.benchmark = True
     last_longterm_save = datetime.datetime.now()
 
     logging.info("="*70)
@@ -592,7 +593,7 @@ def main(args):
 
             # Forward pass
             if use_fp16:
-                with autocast():
+                with autocast(device_type=device.type):
                     with torch.no_grad():
                         teacher_outputs = teacher_model(
                             batch["binaryInputNCHW"],
@@ -699,7 +700,6 @@ def main(args):
     logging.info("Training completed!")
 
     train_metrics_file.close()
-    val_metrics_file.close()
 
 
 if __name__ == "__main__":
