@@ -3,8 +3,8 @@
 Plot Comparison of Multiple Distillation Training Runs
 
 Creates a 4-panel plot comparing loss curves across training variants:
-1. Policy Loss (combined) - all runs
-2. Value Loss (combined) - all runs
+1. Soft Policy Loss - all runs
+2. Soft Value Loss - all runs
 3. Learning Rate (cosine decay) - all runs
 4. MLX Inference Time (FP32 vs INT8 bar chart)
 
@@ -122,38 +122,38 @@ def create_comparison_plot(runs, save_path=None, smooth_window=20):
     linestyles = ['-', '--', ':', '-.', (0, (3, 1, 1, 1))]
 
     # ==========================
-    # Panel 1: Policy Loss (combined)
+    # Panel 1: Soft Policy Loss
     # ==========================
     ax1 = axes[0, 0]
     for i, rd in enumerate(run_data):
-        if 'policy_loss' in rd['metrics']:
-            data = np.array(rd['metrics']['policy_loss'])
+        if 'soft_policy_loss' in rd['metrics']:
+            data = np.array(rd['metrics']['soft_policy_loss'])
             ax1.plot(rd['samples'], smooth_data(data, smooth_window),
                      color=rd['color'], linewidth=2, linestyle=linestyles[i % len(linestyles)],
                      label=rd['label'])
             ax1.plot(rd['samples'], data, alpha=0.15, color=rd['color'], linewidth=0.5)
 
     ax1.set_xlabel('Samples')
-    ax1.set_ylabel('Policy Loss')
-    ax1.set_title('Policy Loss (Combined)')
+    ax1.set_ylabel('Soft Policy Loss')
+    ax1.set_title('Soft Policy Loss')
     ax1.legend(loc='upper right', fontsize=8)
     ax1.grid(True, alpha=0.3)
 
     # ==========================
-    # Panel 2: Value Loss (combined)
+    # Panel 2: Soft Value Loss
     # ==========================
     ax2 = axes[0, 1]
     for i, rd in enumerate(run_data):
-        if 'value_loss' in rd['metrics']:
-            data = np.array(rd['metrics']['value_loss'])
+        if 'soft_value_loss' in rd['metrics']:
+            data = np.array(rd['metrics']['soft_value_loss'])
             ax2.plot(rd['samples'], smooth_data(data, smooth_window),
                      color=rd['color'], linewidth=2, linestyle=linestyles[i % len(linestyles)],
                      label=rd['label'])
             ax2.plot(rd['samples'], data, alpha=0.15, color=rd['color'], linewidth=0.5)
 
     ax2.set_xlabel('Samples')
-    ax2.set_ylabel('Value Loss')
-    ax2.set_title('Value Loss (Combined)')
+    ax2.set_ylabel('Soft Value Loss')
+    ax2.set_title('Soft Value Loss')
     ax2.legend(loc='upper right', fontsize=8)
     ax2.grid(True, alpha=0.3)
 
