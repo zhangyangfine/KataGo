@@ -47,14 +47,19 @@ RUNS = [
         "color": "#3498DB",
     },
     {
-        "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-y",
-        "label": "Y: Softer ft6c384 (T=2, WD=0.02)",
-        "color": "#F39C12",
-    },
-    {
         "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-z",
         "label": "Z: Aggressive ft6c384 (LR=2x, QAT@5)",
         "color": "#1ABC9C",
+    },
+    {
+        "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-aa",
+        "label": "AA: Hyper ft6c384 (LR=3x, QAT@3)",
+        "color": "#E67E22",
+    },
+    {
+        "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-ab",
+        "label": "AB: Deep ft12c384 (4-stage)",
+        "color": "#9B59B6",
     },
 ]
 
@@ -63,7 +68,8 @@ MLX_BENCHMARK = {
     "b6c96":   {"fp32": 1.329, "int8": 1.143},
     "b10c128": {"fp32": 2.001, "int8": 2.072},
     "ft6c96x": {"fp32": 2.165, "int8": 1.958},
-    "ft6c384": {"fp32": 1.995, "int8": 1.477},
+    "ft6c384": {"fp32": 1.831, "int8": 1.416},
+    "ft12c384": {"fp32": 3.426, "int8": 2.384},
 }
 
 

@@ -56,6 +56,14 @@ MODEL_CONFIGS = {
         "mlp_ratios": [3.0, 3.0, 3.0],
         "pos_emb_stages": [False, False, True],
     },
+    "ft12c384": {
+        "type": "fastvit",
+        "layers": [2, 2, 6, 2],
+        "mixers": ["mixer", "mixer", "mixer", "attention"],
+        "embed_dims": [384, 384, 384, 384],
+        "mlp_ratios": [4.0, 4.0, 4.0, 4.0],
+        "pos_emb_stages": [False, False, False, True],
+    },
     "b6c96": {
         "type": "resnet",
         "trunk_channels": 96,
