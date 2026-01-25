@@ -32,16 +32,6 @@ RUNS = [
         "color": "#1ABC9C",
     },
     {
-        "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-b",
-        "label": r"B: Sharp ($\alpha$=0.9, T=1)",
-        "color": "#9467BD",
-    },
-    {
-        "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-c",
-        "label": r"C: Sharp+Sched ($\alpha$=0.9, T=1, BS=64)",
-        "color": "#E74C3C",
-    },
-    {
         "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-d",
         "label": "D: AllAttn ft6c96a",
         "color": "#3498DB",
