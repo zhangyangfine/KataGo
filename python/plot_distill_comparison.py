@@ -34,16 +34,6 @@ RUNS = [
         "color": "#1ABC9C",
     },
     {
-        "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-d",
-        "label": "D: AllAttn ft6c96a",
-        "color": "#3498DB",
-    },
-    {
-        "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-e",
-        "label": "E: DeepAttn ft8c96a",
-        "color": "#F39C12",
-    },
-    {
         "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-f",
         "label": "F: ResNet b6c96",
         "color": "#2ECC71",
@@ -64,8 +54,6 @@ RUNS = [
 MLX_BENCHMARK = {
     "b6c96":   {"fp32": 1.329, "int8": 1.143},
     "ft6c96":  {"fp32": 2.031, "int8": 1.923},
-    "ft6c96a": {"fp32": 1.324, "int8": 1.165},
-    "ft8c96a": {"fp32": 1.582, "int8": 1.504},
     "ft6c96x": {"fp32": 2.165, "int8": 1.958},
     "ft6c384": {"fp32": 1.995, "int8": 1.477},
 }
