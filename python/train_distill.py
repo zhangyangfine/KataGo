@@ -343,8 +343,8 @@ def main(args):
         device = torch.device("cpu")
         logging.warning("WARNING: No GPU, using CPU")
 
-    # Seed
-    seed = int.from_bytes(os.urandom(7), sys.byteorder)
+    # Use 8 bytes for full 64-bit random seed
+    seed = int.from_bytes(os.urandom(8), sys.byteorder)
     logging.info(f"Seeding torch with {seed}")
     torch.manual_seed(seed)
     np.random.seed(seed % (2**32))
@@ -432,12 +432,24 @@ def main(args):
         student_model.load_state_dict(load_model.load_model_state_dict(state_dict))
         if "optimizer" in state_dict:
             optimizer.load_state_dict(state_dict["optimizer"])
+            logging.info("  Loaded optimizer state")
+        else:
+            logging.info("  Optimizer state not found, using fresh optimizer")
         if "scheduler" in state_dict:
             scheduler.load_state_dict(state_dict["scheduler"])
+            logging.info("  Loaded scheduler state")
+        else:
+            logging.info("  Scheduler state not found, using fresh scheduler")
         if "ema_model" in state_dict:
             ema_model.load_state_dict(state_dict["ema_model"])
+            logging.info("  Loaded EMA model state")
+        else:
+            logging.info("  EMA model state not found, using fresh EMA")
         if "train_state" in state_dict:
             train_state = state_dict["train_state"]
+            logging.info("  Loaded train state")
+        else:
+            logging.info("  Train state not found, starting from epoch 0")
         logging.info(f"Resumed from epoch {train_state['epoch']}")
     elif os.path.exists(checkpoint_path):
         logging.info(f"Loading checkpoint: {checkpoint_path}")
@@ -445,12 +457,24 @@ def main(args):
         student_model.load_state_dict(load_model.load_model_state_dict(state_dict))
         if "optimizer" in state_dict:
             optimizer.load_state_dict(state_dict["optimizer"])
+            logging.info("  Loaded optimizer state")
+        else:
+            logging.info("  Optimizer state not found, using fresh optimizer")
         if "scheduler" in state_dict:
             scheduler.load_state_dict(state_dict["scheduler"])
+            logging.info("  Loaded scheduler state")
+        else:
+            logging.info("  Scheduler state not found, using fresh scheduler")
         if "ema_model" in state_dict:
             ema_model.load_state_dict(state_dict["ema_model"])
+            logging.info("  Loaded EMA model state")
+        else:
+            logging.info("  EMA model state not found, using fresh EMA")
         if "train_state" in state_dict:
             train_state = state_dict["train_state"]
+            logging.info("  Loaded train state")
+        else:
+            logging.info("  Train state not found, starting from epoch 0")
         logging.info(f"Resumed from epoch {train_state['epoch']}")
 
     # =============================================

@@ -112,8 +112,14 @@ MLX_BENCHMARK = {
 }
 
 
-def load_metrics(metrics_file):
-    """Load metrics from JSON-lines file."""
+def load_metrics(metrics_file, max_points=10000):
+    """Load metrics from JSON-lines file.
+
+    Args:
+        metrics_file: Path to JSON-lines metrics file
+        max_points: Maximum number of data points to keep (0 = no limit).
+                    If exceeded, uniformly samples to this many points.
+    """
     metrics = defaultdict(list)
 
     if not os.path.exists(metrics_file):
@@ -132,6 +138,16 @@ def load_metrics(metrics_file):
             except json.JSONDecodeError:
                 continue
 
+    # Downsample if too many points
+    if max_points > 0 and metrics:
+        first_key = next(iter(metrics))
+        n_points = len(metrics[first_key])
+        if n_points > max_points:
+            # Uniform sampling indices (always include first and last)
+            indices = np.linspace(0, n_points - 1, max_points, dtype=int)
+            for key in metrics:
+                metrics[key] = [metrics[key][i] for i in indices]
+
     return metrics
 
 
@@ -148,14 +164,14 @@ def smooth_data(data, window=20):
     return smoothed
 
 
-def create_comparison_plot(runs, save_path=None, smooth_window=20):
+def create_comparison_plot(runs, save_path=None, smooth_window=20, max_points=10000):
     """Create multi-panel comparison plot for distillation training runs."""
 
     # Load all metrics
     run_data = []
     for run in runs:
         metrics_file = os.path.join(run["dir"], "metrics_train.json")
-        metrics = load_metrics(metrics_file)
+        metrics = load_metrics(metrics_file, max_points=max_points)
         if metrics and 'global_step_samples' in metrics:
             run_data.append({
                 "metrics": metrics,
@@ -293,6 +309,8 @@ def main():
                         help='Save plot to file (default: comparison_curves.png in runs-dir)')
     parser.add_argument('--smooth', type=int, default=20,
                         help='Smoothing window size (default: 20)')
+    parser.add_argument('--max-points', type=int, default=10000,
+                        help='Maximum data points per run (0 = no limit, default: 10000)')
     args = parser.parse_args()
 
     # Validate runs-dir
@@ -315,7 +333,7 @@ def main():
     if save_path is None:
         save_path = os.path.join(args.runs_dir, "comparison_curves.png")
 
-    create_comparison_plot(runs, save_path=save_path, smooth_window=args.smooth)
+    create_comparison_plot(runs, save_path=save_path, smooth_window=args.smooth, max_points=args.max_points)
 
 
 if __name__ == "__main__":
