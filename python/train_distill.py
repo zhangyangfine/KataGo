@@ -54,6 +54,29 @@ from katago.train.distill_loss import (
 
 
 # ==============================================================================
+# LOGGING FILTER
+# ==============================================================================
+
+class ProgressFilter(logging.Filter):
+    """Only allow progress-related log messages through to console."""
+    def filter(self, record):
+        msg = record.getMessage()
+        # Allow epoch headers
+        if msg.startswith("EPOCH "):
+            return True
+        # Allow batch metrics like "[10] loss=..." (number in brackets)
+        if msg.startswith("[") and msg[1:].split("]")[0].isdigit():
+            return True
+        # Allow completion and start messages
+        if "completed in" in msg or "STARTING" in msg:
+            return True
+        # Allow separator lines
+        if msg.startswith("="):
+            return True
+        return False
+
+
+# ==============================================================================
 # ARGUMENT PARSING
 # ==============================================================================
 
@@ -323,16 +346,21 @@ def main(args):
     # Create directories
     longterm_dir = make_dirs(traindir)
 
-    # Setup logging
+    # Setup logging with separate handlers for file (all messages) and console (progress only)
     logging.root.handlers = []
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(message)s",
-        handlers=[
-            logging.FileHandler(os.path.join(traindir, "train.log"), mode="a"),
-            logging.StreamHandler()
-        ],
-    )
+
+    # File handler: all messages
+    file_handler = logging.FileHandler(os.path.join(traindir, "train.log"), mode="a")
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(logging.Formatter("%(message)s"))
+
+    # Console handler: progress only
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_handler.addFilter(ProgressFilter())
+    console_handler.setFormatter(logging.Formatter("%(message)s"))
+
+    logging.basicConfig(level=logging.DEBUG, handlers=[file_handler, console_handler])
     logging.info(str(sys.argv))
 
     # Device setup
@@ -358,7 +386,7 @@ def main(args):
         use_swa=use_teacher_swa,
         device=device,
         pos_len=pos_len,
-        verbose=True
+        verbose=False
     )
     if use_teacher_swa and teacher_swa is not None:
         teacher_model = teacher_swa
