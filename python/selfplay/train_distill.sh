@@ -7,36 +7,39 @@
 # from a larger teacher model (b28c512nbt).
 #
 # Usage:
+#   # Set required environment variables
+#   export DISTILL_TRAINDIR=/path/to/output
+#   export DISTILL_DATADIR=/path/to/npz/data
+#   export DISTILL_TEACHER_CHECKPOINT=/path/to/teacher.ckpt
 #   ./train_distill.sh
 #
-# Configuration:
-#   Edit the variables below to customize the training.
+# Required Environment Variables:
+#   DISTILL_TRAINDIR          - Training output directory
+#   DISTILL_DATADIR           - NPZ data directory (containing train/*.npz)
+#   DISTILL_TEACHER_CHECKPOINT - Teacher model checkpoint path
+#
+# Optional Environment Variables:
+#   KATAGO_PYTHON             - Python executable (default: python)
 #
 # ==============================================================================
 
 set -e
 
 # ==============================================================================
-# CONDA ENVIRONMENT
+# ENVIRONMENT VARIABLES (REQUIRED)
 # ==============================================================================
 
-# Activate conda environment (adjust path if needed)
-CONDA_ENV="katago"
-PYTHON_PATH="/Users/chinchangyang/miniconda3/envs/${CONDA_ENV}/bin/python"
+# Python executable (optional, defaults to 'python')
+PYTHON_PATH="${KATAGO_PYTHON:-python}"
 
-# ==============================================================================
-# CONFIGURATION - EDIT THESE PATHS
-# ==============================================================================
+# Training output directory (required)
+TRAINDIR="${DISTILL_TRAINDIR:?Error: Set DISTILL_TRAINDIR environment variable}"
 
-# Training output directory
-TRAINDIR="/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96"
+# NPZ data directory (required)
+DATADIR="${DISTILL_DATADIR:?Error: Set DISTILL_DATADIR environment variable}"
 
-# NPZ data directory (containing train/*.npz files)
-# Can be a directory with npz files or a path with wildcards
-DATADIR="/Users/chinchangyang/Code/KataGo-CCY/for_release/kata19/selfplay"
-
-# Teacher model checkpoint
-TEACHER_CHECKPOINT="/Users/chinchangyang/Code/KataGo-Models/b28c512nbt-adam-s11165M/kata1-b28c512nbt-adam-s11165M-d5387M.ckpt"
+# Teacher model checkpoint (required)
+TEACHER_CHECKPOINT="${DISTILL_TEACHER_CHECKPOINT:?Error: Set DISTILL_TEACHER_CHECKPOINT environment variable}"
 
 # Student model architecture
 STUDENT_MODEL="ft6c96"

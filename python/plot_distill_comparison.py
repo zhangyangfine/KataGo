@@ -9,13 +9,21 @@ Creates a 4-panel plot comparing loss curves across training variants:
 4. MLX Inference Time (FP32 vs INT8 bar chart)
 
 Usage:
-    python plot_distill_comparison.py --save output.png
-    python plot_distill_comparison.py  # interactive display
+    # With explicit arguments
+    python plot_distill_comparison.py --runs-dir /path/to/distill-ft6c96-9x9 --save output.png
+
+    # With environment variable
+    export DISTILL_RUNS_DIR=/path/to/distill-ft6c96-9x9
+    python plot_distill_comparison.py
+
+    # Filter specific variants
+    python plot_distill_comparison.py --runs-dir /path/to/runs --variants f,g,z
 """
 
 import argparse
 import json
 import os
+import re
 from collections import defaultdict
 
 import matplotlib
@@ -24,39 +32,76 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-# Define runs to compare
-RUNS = [
-    {
-        "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-f",
-        "label": "F: ResNet b6c96",
-        "color": "#2ECC71",
-    },
-    {
-        "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-w",
-        "label": "W: WideChannels ft6c384 (QAT)",
-        "color": "#8E44AD",
-    },
-    {
-        "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-g",
-        "label": "G: ResNet b10c128",
-        "color": "#3498DB",
-    },
-    {
-        "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-z",
-        "label": "Z: Aggressive ft6c384 (LR=2x, QAT@5)",
-        "color": "#1ABC9C",
-    },
-    {
-        "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-aa",
-        "label": "AA: Hyper ft6c384 (LR=3x, QAT@3)",
-        "color": "#E67E22",
-    },
-    {
-        "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-ab",
-        "label": "AB: Deep ft12c384 (4-stage)",
-        "color": "#9B59B6",
-    },
-]
+# Variant styles: maps variant name to label and color
+# Add new variants here when created
+VARIANT_STYLES = {
+    "f":  {"label": "F: ResNet b6c96", "color": "#2ECC71"},
+    "g":  {"label": "G: ResNet b10c128", "color": "#3498DB"},
+    "w":  {"label": "W: WideChannels ft6c384 (QAT)", "color": "#8E44AD"},
+    "z":  {"label": "Z: Aggressive ft6c384 (LR=2x, QAT@5)", "color": "#1ABC9C"},
+    "aa": {"label": "AA: Hyper ft6c384 (LR=3x, QAT@3)", "color": "#E67E22"},
+    "ab": {"label": "AB: Deep ft12c384 (4-stage)", "color": "#9B59B6"},
+}
+
+# Default color cycle for unknown variants
+DEFAULT_COLORS = ["#E74C3C", "#F39C12", "#27AE60", "#2980B9", "#8E44AD", "#1ABC9C"]
+
+
+def discover_runs(runs_dir, variant_filter=None):
+    """Auto-discover variant directories and create RUNS list.
+
+    Args:
+        runs_dir: Base directory containing variant-* subdirectories
+        variant_filter: Optional list of variant names to include (e.g., ['f', 'g', 'z'])
+
+    Returns:
+        List of run dicts with 'dir', 'label', and 'color' keys
+    """
+    runs = []
+    unknown_idx = 0
+
+    if not os.path.isdir(runs_dir):
+        print(f"Error: runs directory does not exist: {runs_dir}")
+        return runs
+
+    # Find all variant-* directories
+    for entry in sorted(os.listdir(runs_dir)):
+        match = re.match(r'^variant-([a-z]+)$', entry)
+        if not match:
+            continue
+
+        variant_name = match.group(1)
+
+        # Apply filter if specified
+        if variant_filter and variant_name not in variant_filter:
+            continue
+
+        variant_dir = os.path.join(runs_dir, entry)
+        if not os.path.isdir(variant_dir):
+            continue
+
+        # Check if metrics file exists
+        metrics_file = os.path.join(variant_dir, "metrics_train.json")
+        if not os.path.exists(metrics_file):
+            continue
+
+        # Get style from VARIANT_STYLES or generate default
+        if variant_name in VARIANT_STYLES:
+            style = VARIANT_STYLES[variant_name]
+            label = style["label"]
+            color = style["color"]
+        else:
+            label = f"{variant_name.upper()}: variant-{variant_name}"
+            color = DEFAULT_COLORS[unknown_idx % len(DEFAULT_COLORS)]
+            unknown_idx += 1
+
+        runs.append({
+            "dir": variant_dir,
+            "label": label,
+            "color": color,
+        })
+
+    return runs
 
 # MLX 8-bit quantized inference benchmark data (9x9, batch=1, median latency in ms)
 MLX_BENCHMARK = {
@@ -238,14 +283,39 @@ def create_comparison_plot(runs, save_path=None, smooth_window=20):
 
 def main():
     parser = argparse.ArgumentParser(description='Plot distillation training comparison')
-    parser.add_argument('--save', type=str,
-                        default="/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/comparison_curves.png",
-                        help='Save plot to file')
+    parser.add_argument('--runs-dir', type=str,
+                        default=os.environ.get('DISTILL_RUNS_DIR'),
+                        help='Base directory containing variant subdirectories '
+                             '(default: $DISTILL_RUNS_DIR env var)')
+    parser.add_argument('--variants', type=str, default=None,
+                        help='Comma-separated variant names to include (default: auto-discover all)')
+    parser.add_argument('--save', type=str, default=None,
+                        help='Save plot to file (default: comparison_curves.png in runs-dir)')
     parser.add_argument('--smooth', type=int, default=20,
                         help='Smoothing window size (default: 20)')
     args = parser.parse_args()
 
-    create_comparison_plot(RUNS, save_path=args.save, smooth_window=args.smooth)
+    # Validate runs-dir
+    if not args.runs_dir:
+        parser.error("--runs-dir is required (or set DISTILL_RUNS_DIR environment variable)")
+
+    # Parse variants filter
+    variant_filter = None
+    if args.variants:
+        variant_filter = [v.strip().lower() for v in args.variants.split(',')]
+
+    # Discover runs
+    runs = discover_runs(args.runs_dir, variant_filter)
+    if not runs:
+        print(f"Error: No valid variant directories found in {args.runs_dir}")
+        return
+
+    # Default save path relative to runs-dir
+    save_path = args.save
+    if save_path is None:
+        save_path = os.path.join(args.runs_dir, "comparison_curves.png")
+
+    create_comparison_plot(runs, save_path=save_path, smooth_window=args.smooth)
 
 
 if __name__ == "__main__":
