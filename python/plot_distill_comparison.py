@@ -46,6 +46,16 @@ RUNS = [
         "label": "G: ResNet b10c128",
         "color": "#3498DB",
     },
+    {
+        "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-y",
+        "label": "Y: Softer ft6c384 (T=2, WD=0.02)",
+        "color": "#F39C12",
+    },
+    {
+        "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-z",
+        "label": "Z: Aggressive ft6c384 (LR=2x, QAT@5)",
+        "color": "#1ABC9C",
+    },
 ]
 
 # MLX 8-bit quantized inference benchmark data (9x9, batch=1, median latency in ms)
