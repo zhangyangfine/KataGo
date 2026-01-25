@@ -334,18 +334,12 @@ def main(args):
     logging.info(str(sys.argv))
 
     # Device setup
-    if torch.cuda.is_available():
-        device = torch.device("cuda")
-        logging.info("Using GPU: " + torch.cuda.get_device_name())
-    elif torch.backends.mps.is_available():
+    if torch.backends.mps.is_available():
         device = torch.device("mps")
         logging.info("Using MPS device")
     else:
         device = torch.device("cpu")
         logging.warning("WARNING: No GPU, using CPU")
-
-    # Enable cuDNN benchmark for faster convolutions
-    torch.backends.cudnn.benchmark = True
 
     # Seed
     seed = int.from_bytes(os.urandom(7), sys.byteorder)
@@ -498,102 +492,114 @@ def main(args):
     # Open metrics files
     train_metrics_file = open(os.path.join(traindir, "metrics_train.json"), "a")
 
-    # =============================================
-    # Save function
-    # =============================================
-    def save_checkpoint(path=None):
-        state = {
-            "model": student_model.state_dict(),
-            "optimizer": optimizer.state_dict(),
-            "scheduler": scheduler.state_dict(),
-            "ema_model": ema_model.state_dict(),
-            "train_state": train_state,
-            "config": student_config,
-        }
-        if enable_qat:
-            state["qat_config"] = {
-                "bits": args["qat_bits"],
-                "group_size": args["qat_group_size"],
-                "start_epoch": qat_start_epoch,
+    try:
+        # =============================================
+        # Save function
+        # =============================================
+        def save_checkpoint(path=None):
+            state = {
+                "model": student_model.state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "scheduler": scheduler.state_dict(),
+                "ema_model": ema_model.state_dict(),
+                "train_state": train_state,
+                "config": student_config,
             }
-        if path is None:
-            path = checkpoint_path
-        logging.info(f"Saving checkpoint to: {path}")
-        torch.save(state, path + ".tmp")
-        time.sleep(0.5)
-        os.replace(path + ".tmp", path)
+            if enable_qat:
+                state["qat_config"] = {
+                    "bits": args["qat_bits"],
+                    "group_size": args["qat_group_size"],
+                    "start_epoch": qat_start_epoch,
+                }
+            if path is None:
+                path = checkpoint_path
+            logging.info(f"Saving checkpoint to: {path}")
+            torch.save(state, path + ".tmp")
+            time.sleep(0.5)
+            os.replace(path + ".tmp", path)
 
-    # =============================================
-    # Training Loop
-    # =============================================
-    last_longterm_save = datetime.datetime.now()
+        # =============================================
+        # Training Loop
+        # =============================================
+        last_longterm_save = datetime.datetime.now()
 
-    logging.info("="*70)
-    logging.info("STARTING KNOWLEDGE DISTILLATION TRAINING")
-    logging.info("="*70)
-    logging.info(f"Teacher: {teacher_checkpoint}")
-    logging.info(f"Student: {student_model_name}")
-    logging.info(f"Distillation alpha: {args['distill_alpha']}")
-    logging.info(f"Temperature: {args['temperature']}")
-    logging.info(f"Label smoothing: {args['label_smoothing']}")
-    if enable_qat:
-        logging.info(f"QAT: bits={args['qat_bits']}, group_size={args['qat_group_size']}, start_epoch={qat_start_epoch}")
-    logging.info("="*70)
-
-    while train_state["epoch"] < max_epochs:
-        epoch = train_state["epoch"]
         logging.info("="*70)
-        logging.info(f"EPOCH {epoch + 1}/{max_epochs}")
+        logging.info("STARTING KNOWLEDGE DISTILLATION TRAINING")
         logging.info("="*70)
-        logging.info(f"Time: {datetime.datetime.now()}")
-        logging.info(f"Global samples: {train_state['global_step_samples']:,}")
-        logging.info(f"Learning rate: {scheduler.get_last_lr()[0]:.2e}")
-
-        # Toggle QAT at the specified epoch
+        logging.info(f"Teacher: {teacher_checkpoint}")
+        logging.info(f"Student: {student_model_name}")
+        logging.info(f"Distillation alpha: {args['distill_alpha']}")
+        logging.info(f"Temperature: {args['temperature']}")
+        logging.info(f"Label smoothing: {args['label_smoothing']}")
         if enable_qat:
-            qat_active = epoch >= qat_start_epoch
-            set_qat_enabled(student_model, enabled=qat_active)
-            if qat_active:
-                logging.info(f"QAT: fake quantization ENABLED (epoch {epoch} >= {qat_start_epoch})")
+            logging.info(f"QAT: bits={args['qat_bits']}, group_size={args['qat_group_size']}, start_epoch={qat_start_epoch}")
+        logging.info("="*70)
 
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        while train_state["epoch"] < max_epochs:
+            epoch = train_state["epoch"]
+            logging.info("="*70)
+            logging.info(f"EPOCH {epoch + 1}/{max_epochs}")
+            logging.info("="*70)
+            logging.info(f"Time: {datetime.datetime.now()}")
+            logging.info(f"Global samples: {train_state['global_step_samples']:,}")
+            logging.info(f"Learning rate: {scheduler.get_last_lr()[0]:.2e}")
 
-        # Get training files
-        train_files = get_train_files()
-        if len(train_files) == 0:
-            logging.error(f"No training files found in {datadir}")
-            break
-        np.random.shuffle(train_files)
-        logging.info(f"Found {len(train_files)} training files")
+            # Toggle QAT at the specified epoch
+            if enable_qat:
+                qat_active = epoch >= qat_start_epoch
+                set_qat_enabled(student_model, enabled=qat_active)
+                if qat_active:
+                    logging.info(f"QAT: fake quantization ENABLED (epoch {epoch} >= {qat_start_epoch})")
 
-        # Training
-        student_model.train()
-        teacher_model.eval()
+            gc.collect()
 
-        running_metrics = defaultdict(float)
-        running_count = 0
-        batch_count = 0
-        epoch_start_time = time.perf_counter()
-        last_log_time = time.perf_counter()
+            # Get training files
+            train_files = get_train_files()
+            if len(train_files) == 0:
+                logging.error(f"No training files found in {datadir}")
+                break
+            np.random.shuffle(train_files)
+            logging.info(f"Found {len(train_files)} training files")
 
-        for batch in data_processing_pytorch.read_npz_training_data(
-            train_files,
-            batch_size,
-            world_size=1,
-            rank=0,
-            pos_len=pos_len,
-            device=device,
-            randomize_symmetries=True,
-            include_meta=student_model.get_has_metadata_encoder(),
-            model_config=student_config,
-        ):
-            optimizer.zero_grad(set_to_none=True)
+            # Training
+            student_model.train()
+            teacher_model.eval()
 
-            # Forward pass
-            if use_fp16:
-                with autocast(device_type=device.type):
+            running_metrics = defaultdict(float)
+            running_count = 0
+            batch_count = 0
+            epoch_start_time = time.perf_counter()
+            last_log_time = time.perf_counter()
+
+            for batch in data_processing_pytorch.read_npz_training_data(
+                train_files,
+                batch_size,
+                world_size=1,
+                rank=0,
+                pos_len=pos_len,
+                device=device,
+                randomize_symmetries=True,
+                include_meta=student_model.get_has_metadata_encoder(),
+                model_config=student_config,
+            ):
+                optimizer.zero_grad(set_to_none=True)
+
+                # Forward pass
+                if use_fp16:
+                    with autocast(device_type=device.type):
+                        with torch.no_grad():
+                            teacher_outputs = teacher_model(
+                                batch["binaryInputNCHW"],
+                                batch["globalInputNC"],
+                            )
+                        student_outputs = student_model(
+                            batch["binaryInputNCHW"],
+                            batch["globalInputNC"],
+                        )
+                    # Convert to float32 for loss computation
+                    student_outputs = student_model.float32ify_output(student_outputs)
+                    teacher_outputs = teacher_model.float32ify_output(teacher_outputs)
+                else:
                     with torch.no_grad():
                         teacher_outputs = teacher_model(
                             batch["binaryInputNCHW"],
@@ -603,103 +609,90 @@ def main(args):
                         batch["binaryInputNCHW"],
                         batch["globalInputNC"],
                     )
-                # Convert to float32 for loss computation
-                student_outputs = student_model.float32ify_output(student_outputs)
-                teacher_outputs = teacher_model.float32ify_output(teacher_outputs)
-            else:
-                with torch.no_grad():
-                    teacher_outputs = teacher_model(
-                        batch["binaryInputNCHW"],
-                        batch["globalInputNC"],
+
+                # Compute loss
+                losses = compute_distillation_loss(student_outputs, teacher_outputs, batch, args)
+                loss = losses['total_loss']
+
+                # Backward pass
+                if use_fp16:
+                    scaler.scale(loss).backward()
+                    scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(student_model.parameters(), 1.0)
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(student_model.parameters(), 1.0)
+                    optimizer.step()
+
+                # Update scheduler
+                scheduler.step()
+
+                # Update EMA
+                ema_model.update(student_model)
+
+                # Update counters
+                batch_count += 1
+                train_state["global_step_samples"] += batch_size
+                running_count += batch_size
+
+                # Accumulate metrics
+                metrics = detensorify_metrics(losses)
+                for key, val in metrics.items():
+                    running_metrics[key] += val * batch_size
+
+                # Log periodically
+                if batch_count % log_every == 0:
+                    t1 = time.perf_counter()
+                    time_elapsed = t1 - last_log_time
+                    last_log_time = t1
+
+                    avg_metrics = {k: v / running_count for k, v in running_metrics.items()}
+                    avg_metrics['lr'] = scheduler.get_last_lr()[0]
+                    avg_metrics['samples_per_sec'] = running_count / time_elapsed
+                    if enable_qat:
+                        avg_metrics['qat_enabled'] = epoch >= qat_start_epoch
+
+                    log_metrics(avg_metrics, train_metrics_file, train_state)
+
+                    logging.info(
+                        f"[{batch_count}] loss={avg_metrics['total_loss']:.4f} "
+                        f"policy={avg_metrics['policy_loss']:.4f} "
+                        f"value={avg_metrics['value_loss']:.4f} "
+                        f"lr={avg_metrics['lr']:.2e} "
+                        f"samp/s={avg_metrics['samples_per_sec']:.1f}"
                     )
-                student_outputs = student_model(
-                    batch["binaryInputNCHW"],
-                    batch["globalInputNC"],
-                )
 
-            # Compute loss
-            losses = compute_distillation_loss(student_outputs, teacher_outputs, batch, args)
-            loss = losses['total_loss']
+                    running_metrics = defaultdict(float)
+                    running_count = 0
 
-            # Backward pass
-            if use_fp16:
-                scaler.scale(loss).backward()
-                scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(student_model.parameters(), 1.0)
-                scaler.step(optimizer)
-                scaler.update()
-            else:
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(student_model.parameters(), 1.0)
-                optimizer.step()
+                # Stop at samples_per_epoch
+                if batch_count * batch_size >= samples_per_epoch:
+                    break
 
-            # Update scheduler
-            scheduler.step()
+            # End of epoch
+            epoch_time = time.perf_counter() - epoch_start_time
+            logging.info(f"Epoch {epoch + 1} completed in {epoch_time:.1f}s")
 
-            # Update EMA
-            ema_model.update(student_model)
+            train_state["epoch"] += 1
 
-            # Update counters
-            batch_count += 1
-            train_state["global_step_samples"] += batch_size
-            running_count += batch_size
+            # Save checkpoint
+            if train_state["epoch"] % save_every == 0:
+                save_checkpoint()
 
-            # Accumulate metrics
-            metrics = detensorify_metrics(losses)
-            for key, val in metrics.items():
-                running_metrics[key] += val * batch_size
+            # Save longterm checkpoint every 12 hours
+            now = datetime.datetime.now()
+            if now - last_longterm_save >= datetime.timedelta(hours=12):
+                last_longterm_save = now
+                dated_name = now.strftime("%Y%m%d-%H%M%S")
+                save_checkpoint(os.path.join(longterm_dir, f"{dated_name}.ckpt"))
 
-            # Log periodically
-            if batch_count % log_every == 0:
-                t1 = time.perf_counter()
-                time_elapsed = t1 - last_log_time
-                last_log_time = t1
-
-                avg_metrics = {k: v / running_count for k, v in running_metrics.items()}
-                avg_metrics['lr'] = scheduler.get_last_lr()[0]
-                avg_metrics['samples_per_sec'] = running_count / time_elapsed
-                if enable_qat:
-                    avg_metrics['qat_enabled'] = epoch >= qat_start_epoch
-
-                log_metrics(avg_metrics, train_metrics_file, train_state)
-
-                logging.info(
-                    f"[{batch_count}] loss={avg_metrics['total_loss']:.4f} "
-                    f"policy={avg_metrics['policy_loss']:.4f} "
-                    f"value={avg_metrics['value_loss']:.4f} "
-                    f"lr={avg_metrics['lr']:.2e} "
-                    f"samp/s={avg_metrics['samples_per_sec']:.1f}"
-                )
-
-                running_metrics = defaultdict(float)
-                running_count = 0
-
-            # Stop at samples_per_epoch
-            if batch_count * batch_size >= samples_per_epoch:
-                break
-
-        # End of epoch
-        epoch_time = time.perf_counter() - epoch_start_time
-        logging.info(f"Epoch {epoch + 1} completed in {epoch_time:.1f}s")
-
-        train_state["epoch"] += 1
-
-        # Save checkpoint
-        if train_state["epoch"] % save_every == 0:
-            save_checkpoint()
-
-        # Save longterm checkpoint every 12 hours
-        now = datetime.datetime.now()
-        if now - last_longterm_save >= datetime.timedelta(hours=12):
-            last_longterm_save = now
-            dated_name = now.strftime("%Y%m%d-%H%M%S")
-            save_checkpoint(os.path.join(longterm_dir, f"{dated_name}.ckpt"))
-
-    # Final save
-    save_checkpoint()
-    logging.info("Training completed!")
-
-    train_metrics_file.close()
+        # Final save
+        save_checkpoint()
+        logging.info("Training completed!")
+    finally:
+        train_metrics_file.close()
 
 
 if __name__ == "__main__":

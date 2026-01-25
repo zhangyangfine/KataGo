@@ -29,6 +29,10 @@ def distillation_loss_policy(student_logits: torch.Tensor,
     Returns:
         Scalar loss value (KL divergence scaled by temperature^2)
     """
+    # Guard against empty batch to prevent NaN from batchmean reduction
+    if student_logits.shape[0] == 0:
+        return torch.tensor(0.0, device=student_logits.device)
+
     # Apply temperature scaling
     student_log_probs = F.log_softmax(student_logits / temperature, dim=-1)
     teacher_probs = F.softmax(teacher_logits / temperature, dim=-1)
