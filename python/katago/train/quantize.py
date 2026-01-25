@@ -132,6 +132,8 @@ def apply_qat_to_model(model: nn.Module, bits: int = 8, group_size: int = 32) ->
     - SelfAttention.proj (nn.Linear)
     - FeedForward.fc1 (nn.Conv2d 1x1)
     - FeedForward.fc2 (nn.Conv2d 1x1)
+    - FeedForwardLinear.fc1 (nn.Linear)
+    - FeedForwardLinear.fc2 (nn.Linear)
 
     Args:
         model: The model to apply QAT to
@@ -141,7 +143,7 @@ def apply_qat_to_model(model: nn.Module, bits: int = 8, group_size: int = 32) ->
     Returns:
         Number of layers wrapped
     """
-    from katago.train.fastvit import SelfAttention, FeedForward
+    from katago.train.fastvit import SelfAttention, FeedForward, FeedForwardLinear
 
     count = 0
     for name, module in model.named_modules():
@@ -149,7 +151,13 @@ def apply_qat_to_model(model: nn.Module, bits: int = 8, group_size: int = 32) ->
             module.qkv = QuantizedLinear(module.qkv, bits=bits, group_size=group_size)
             module.proj = QuantizedLinear(module.proj, bits=bits, group_size=group_size)
             count += 2
+        elif isinstance(module, FeedForwardLinear):
+            # FeedForwardLinear uses nn.Linear for fc1/fc2
+            module.fc1 = QuantizedLinear(module.fc1, bits=bits, group_size=group_size)
+            module.fc2 = QuantizedLinear(module.fc2, bits=bits, group_size=group_size)
+            count += 2
         elif isinstance(module, FeedForward):
+            # FeedForward uses nn.Conv2d 1x1 for fc1/fc2
             module.fc1 = QuantizedConv2d(module.fc1, bits=bits, group_size=group_size)
             module.fc2 = QuantizedConv2d(module.fc2, bits=bits, group_size=group_size)
             count += 2

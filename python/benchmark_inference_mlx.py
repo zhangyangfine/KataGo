@@ -40,6 +40,22 @@ MODEL_CONFIGS = {
         "mlp_ratios": [4.0, 4.0, 4.0, 4.0],
         "pos_emb_stages": [True, True, True, True],
     },
+    "ft6c96x": {
+        "type": "fastvit",
+        "layers": [2, 2, 2],
+        "mixers": ["mixer", "mixer", "attention"],
+        "embed_dims": [96, 96, 96],
+        "mlp_ratios": [16.0, 16.0, 16.0],  # Extreme: 96 -> 1536
+        "pos_emb_stages": [False, False, True],
+    },
+    "ft6c384": {
+        "type": "fastvit",
+        "layers": [2, 2, 2],
+        "mixers": ["mixer", "mixer", "attention"],
+        "embed_dims": [384, 384, 384],
+        "mlp_ratios": [3.0, 3.0, 3.0],
+        "pos_emb_stages": [False, False, True],
+    },
     "b6c96": {
         "type": "resnet",
         "trunk_channels": 96,
@@ -142,6 +158,56 @@ class Mixer(nn.Module):
         return self.conv(x)
 
 
+class PatchMerge(nn.Module):
+    """
+    Patch merging: reduces spatial dims by 2x, increases channels.
+    Uses Linear projection (quantizable).
+    """
+
+    def __init__(self, in_channels: int, out_channels: int):
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.proj = nn.Linear(4 * in_channels, out_channels)
+
+    def __call__(self, x):
+        # x: (B, H, W, C) in NHWC
+        B, H, W, C = x.shape
+        pad_h = (2 - H % 2) % 2
+        pad_w = (2 - W % 2) % 2
+        if pad_h or pad_w:
+            x = mx.pad(x, [(0, 0), (0, pad_h), (0, pad_w), (0, 0)])
+        _, H_pad, W_pad, _ = x.shape
+        H_out, W_out = H_pad // 2, W_pad // 2
+        # Merge 2x2 patches
+        x = x.reshape(B, H_out, 2, W_out, 2, C)
+        x = x.transpose(0, 1, 3, 2, 4, 5).reshape(B, H_out, W_out, 4 * C)
+        return self.proj(x)
+
+
+class PatchUpsample(nn.Module):
+    """
+    Upsamples spatial dims by 2x using nearest neighbor interpolation + conv.
+    """
+
+    def __init__(self, in_channels: int, out_channels: int):
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+
+    def __call__(self, x, target_h, target_w):
+        # x: (B, H, W, C) in NHWC
+        B, H, W, C = x.shape
+        # Upsample via repeat (nearest neighbor 2x)
+        x = mx.repeat(x, 2, axis=1)  # (B, 2*H, W, C)
+        x = mx.repeat(x, 2, axis=2)  # (B, 2*H, 2*W, C)
+        # Crop to target size
+        x = x[:, :target_h, :target_w, :]
+        # Apply 1x1 conv
+        return self.conv(x)
+
+
 class MixerBlock(nn.Module):
     """Mixer block: depthwise conv mixer + FFN with residual."""
 
@@ -183,6 +249,7 @@ class MLXKataGoModel(nn.Module):
       - linear_global: Linear(19 -> embed_dim), broadcast-added to spatial
 
     Trunk: stages of MixerBlock/AttentionBlock with optional PositionalEncoding.
+    Supports patch merging between stages for spatial reduction.
     Head: Conv2d(embed_dim -> 1, 1x1) for minimal timing overhead.
     """
 
@@ -193,15 +260,18 @@ class MLXKataGoModel(nn.Module):
         embed_dims = config["embed_dims"]
         mlp_ratios = config["mlp_ratios"]
         pos_emb_stages = config["pos_emb_stages"]
+        patch_merges = config.get("patch_merge", [False] * (len(layers) - 1))
 
         embed_dim = embed_dims[0]
+        self.uses_patch_merge = any(patch_merges)
 
         # Input processing
         self.conv_spatial = nn.Conv2d(22, embed_dim, kernel_size=3, padding=1)
         self.linear_global = nn.Linear(19, embed_dim)
 
-        # Build stages
+        # Build stages with transitions
         self.stages = []
+        self.transitions = []
         for stage_idx in range(len(layers)):
             stage_modules = []
             if pos_emb_stages[stage_idx]:
@@ -213,18 +283,40 @@ class MLXKataGoModel(nn.Module):
                     stage_modules.append(AttentionBlock(embed_dims[stage_idx], mlp_ratios[stage_idx]))
             self.stages.append(stage_modules)
 
-        # Minimal head for timing
-        self.head = nn.Conv2d(embed_dim, 1, kernel_size=1)
+            # Add transition (patch merge or identity)
+            if stage_idx < len(layers) - 1:
+                if stage_idx < len(patch_merges) and patch_merges[stage_idx]:
+                    self.transitions.append(PatchMerge(embed_dims[stage_idx], embed_dims[stage_idx + 1]))
+                else:
+                    self.transitions.append(None)  # Identity
+
+        # Upsample if patch merging was used
+        if self.uses_patch_merge:
+            self.patch_upsample = PatchUpsample(embed_dims[-1], embed_dims[-1])
+        else:
+            self.patch_upsample = None
+
+        # Minimal head for timing (uses final embed_dim)
+        self.head = nn.Conv2d(embed_dims[-1], 1, kernel_size=1)
 
     def __call__(self, spatial, global_feat):
         # spatial: (B, H, W, 22), global_feat: (B, 19)
+        B, orig_H, orig_W, _ = spatial.shape
+
         x = self.conv_spatial(spatial)  # (B, H, W, C)
         g = self.linear_global(global_feat)  # (B, C)
         x = x + g.reshape(g.shape[0], 1, 1, g.shape[1])  # broadcast add
 
-        for stage in self.stages:
+        for stage_idx, stage in enumerate(self.stages):
             for layer in stage:
                 x = layer(x)
+            # Apply transition if exists
+            if stage_idx < len(self.transitions) and self.transitions[stage_idx] is not None:
+                x = self.transitions[stage_idx](x)
+
+        # Upsample back to original spatial dimensions if patch merging was used
+        if self.uses_patch_merge and self.patch_upsample is not None:
+            x = self.patch_upsample(x, orig_H, orig_W)
 
         x = self.head(x)  # (B, H, W, 1)
         return x
@@ -480,6 +572,12 @@ def main():
             for stage in model_int8.stages:
                 for layer in stage:
                     nn.quantize(layer, bits=8, group_size=32)
+            # Quantize patch merge/upsample Linear layers if present
+            for trans in model_int8.transitions:
+                if trans is not None and hasattr(trans, 'proj'):
+                    nn.quantize(trans.proj, bits=8, group_size=32)
+            if model_int8.patch_upsample is not None:
+                nn.quantize(model_int8.patch_upsample.conv, bits=8, group_size=32)
         elif model_type == "resnet":
             # Quantize Linear layers in gpool blocks
             for block in model_int8.blocks:

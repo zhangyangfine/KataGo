@@ -24,7 +24,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-# Define runs to compare (top 3 variants)
+# Define runs to compare
 RUNS = [
     {
         "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-a",
@@ -55,6 +55,16 @@ RUNS = [
         "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-f",
         "label": "F: ResNet b6c96",
         "color": "#2ECC71",
+    },
+    {
+        "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-x",
+        "label": "X: ExtremeFFN ft6c96x",
+        "color": "#E74C3C",
+    },
+    {
+        "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-w",
+        "label": "W: WideChannels ft6c384 (QAT)",
+        "color": "#8E44AD",
     },
 ]
 
