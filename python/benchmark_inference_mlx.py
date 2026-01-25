@@ -63,6 +63,14 @@ MODEL_CONFIGS = {
         "gpool_channels": 32,
         "blocks": ["regular", "regular", "gpool", "regular", "gpool", "regular"],
     },
+    "b10c128": {
+        "type": "resnet",
+        "trunk_channels": 128,
+        "mid_channels": 128,
+        "gpool_channels": 32,
+        "blocks": ["regular", "regular", "regular", "regular", "gpool",
+                   "regular", "regular", "gpool", "regular", "regular"],
+    },
 }
 
 

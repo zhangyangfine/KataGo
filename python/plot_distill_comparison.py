@@ -51,11 +51,17 @@ RUNS = [
         "label": "A-QAT: ft6c96 (QAT)",
         "color": "#F39C12",
     },
+    {
+        "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-g",
+        "label": "G: ResNet b10c128",
+        "color": "#3498DB",
+    },
 ]
 
 # MLX 8-bit quantized inference benchmark data (9x9, batch=1, median latency in ms)
 MLX_BENCHMARK = {
     "b6c96":   {"fp32": 1.329, "int8": 1.143},
+    "b10c128": {"fp32": 2.001, "int8": 2.072},
     "ft6c96":  {"fp32": 2.031, "int8": 1.923},
     "ft6c96x": {"fp32": 2.165, "int8": 1.958},
     "ft6c384": {"fp32": 1.995, "int8": 1.477},
