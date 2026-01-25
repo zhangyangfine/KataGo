@@ -984,7 +984,7 @@ def create_blocks(
 
     for block_idx in range(num_blocks[stage_idx]):
         # Calculate drop path rate for stochastic depth
-        dpr = drop_path_rate * (block_idx + total_blocks) / (total_blocks_all - 1)
+        dpr = drop_path_rate * (block_idx + total_blocks) / max(1, total_blocks_all - 1)
         if mixer_type.lower() == "mixer":
             # Append MixerBlock or MixerBlockLinear
             if use_linear_ffn:
