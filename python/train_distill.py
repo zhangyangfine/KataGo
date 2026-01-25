@@ -456,7 +456,7 @@ def main(args):
     checkpoint_path = get_checkpoint_path(traindir)
     if initial_checkpoint is not None and os.path.exists(initial_checkpoint):
         logging.info(f"Loading initial checkpoint: {initial_checkpoint}")
-        state_dict = torch.load(initial_checkpoint, map_location=device)
+        state_dict = torch.load(initial_checkpoint, map_location=device, weights_only=False)
         student_model.load_state_dict(load_model.load_model_state_dict(state_dict))
         if "optimizer" in state_dict:
             optimizer.load_state_dict(state_dict["optimizer"])
@@ -481,7 +481,7 @@ def main(args):
         logging.info(f"Resumed from epoch {train_state['epoch']}")
     elif os.path.exists(checkpoint_path):
         logging.info(f"Loading checkpoint: {checkpoint_path}")
-        state_dict = torch.load(checkpoint_path, map_location=device)
+        state_dict = torch.load(checkpoint_path, map_location=device, weights_only=False)
         student_model.load_state_dict(load_model.load_model_state_dict(state_dict))
         if "optimizer" in state_dict:
             optimizer.load_state_dict(state_dict["optimizer"])
