@@ -27,11 +27,6 @@ import numpy as np
 # Define runs to compare
 RUNS = [
     {
-        "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-a",
-        "label": r"A: Pure ($\alpha$=1.0, T=1)",
-        "color": "#1ABC9C",
-    },
-    {
         "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-f",
         "label": "F: ResNet b6c96",
         "color": "#2ECC71",
@@ -47,11 +42,6 @@ RUNS = [
         "color": "#8E44AD",
     },
     {
-        "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-a-qat",
-        "label": "A-QAT: ft6c96 (QAT)",
-        "color": "#F39C12",
-    },
-    {
         "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-g",
         "label": "G: ResNet b10c128",
         "color": "#3498DB",
@@ -62,7 +52,6 @@ RUNS = [
 MLX_BENCHMARK = {
     "b6c96":   {"fp32": 1.329, "int8": 1.143},
     "b10c128": {"fp32": 2.001, "int8": 2.072},
-    "ft6c96":  {"fp32": 2.031, "int8": 1.923},
     "ft6c96x": {"fp32": 2.165, "int8": 1.958},
     "ft6c384": {"fp32": 1.995, "int8": 1.477},
 }
