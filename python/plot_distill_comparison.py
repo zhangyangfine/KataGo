@@ -2,11 +2,13 @@
 """
 Plot Comparison of Multiple Distillation Training Runs
 
-Creates a 4-panel plot comparing loss curves across training variants:
+Creates a 6-panel plot comparing loss curves across training variants:
 1. Policy Loss (combined) - all runs
 2. Value Loss (combined) - all runs
 3. Soft Policy Loss - all runs (key distillation quality metric)
 4. Total Loss - all runs
+5. Learning Rate (cosine decay) - all runs
+6. MLX Inference Time (FP32 vs INT8 bar chart)
 
 Usage:
     python plot_distill_comparison.py --save output.png
@@ -57,6 +59,16 @@ RUNS = [
         "color": "#8E44AD",
     },
 ]
+
+# MLX 8-bit quantized inference benchmark data (9x9, batch=1, median latency in ms)
+MLX_BENCHMARK = {
+    "b6c96":   {"fp32": 1.329, "int8": 1.143},
+    "ft6c96":  {"fp32": 2.031, "int8": 1.923},
+    "ft6c96a": {"fp32": 1.324, "int8": 1.165},
+    "ft8c96a": {"fp32": 1.582, "int8": 1.504},
+    "ft6c96x": {"fp32": 2.165, "int8": 1.958},
+    "ft6c384": {"fp32": 1.995, "int8": 1.477},
+}
 
 
 def load_metrics(metrics_file):
@@ -118,7 +130,7 @@ def create_comparison_plot(runs, save_path=None, smooth_window=20):
         return False
 
     # Create figure with subplots
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    fig, axes = plt.subplots(3, 2, figsize=(14, 15))
     fig.suptitle('9x9 Distillation Training Comparison (FastVIT variants)', fontsize=14, fontweight='bold')
 
     linestyles = ['-', '--', ':', '-.', (0, (3, 1, 1, 1))]
@@ -195,6 +207,53 @@ def create_comparison_plot(runs, save_path=None, smooth_window=20):
     ax4.legend(loc='upper right', fontsize=8)
     ax4.grid(True, alpha=0.3)
 
+    # ==========================
+    # Panel 5: Learning Rate (Cosine Decay)
+    # ==========================
+    ax5 = axes[2, 0]
+    for i, rd in enumerate(run_data):
+        if 'lr' in rd['metrics']:
+            data = np.array(rd['metrics']['lr'])
+            ax5.plot(rd['samples'], data, color=rd['color'],
+                     linewidth=2, linestyle=linestyles[i % len(linestyles)],
+                     label=rd['label'])
+
+    ax5.set_xlabel('Samples')
+    ax5.set_ylabel('Learning Rate')
+    ax5.set_title('Learning Rate (Cosine Decay)')
+    ax5.legend(loc='upper right', fontsize=8)
+    ax5.grid(True, alpha=0.3)
+    ax5.ticklabel_format(style='scientific', axis='y', scilimits=(0, 0))
+
+    # ==========================
+    # Panel 6: MLX Inference Time (Bar Chart)
+    # ==========================
+    ax6 = axes[2, 1]
+    models = list(MLX_BENCHMARK.keys())
+    x = np.arange(len(models))
+    width = 0.35
+
+    fp32_vals = [MLX_BENCHMARK[m]['fp32'] for m in models]
+    int8_vals = [MLX_BENCHMARK[m]['int8'] for m in models]
+
+    ax6.bar(x - width/2, fp32_vals, width, label='FP32', color='#3498DB')
+    ax6.bar(x + width/2, int8_vals, width, label='INT8', color='#2ECC71')
+
+    ax6.set_xlabel('Model')
+    ax6.set_ylabel('Latency (ms)')
+    ax6.set_title('MLX Inference Time (9x9, batch=1, median)')
+    ax6.set_xticks(x)
+    ax6.set_xticklabels(models, rotation=45, ha='right')
+    ax6.legend()
+    ax6.grid(True, alpha=0.3, axis='y')
+
+    # Add speedup annotations
+    for i, (f, i8) in enumerate(zip(fp32_vals, int8_vals)):
+        speedup = f / i8
+        ax6.annotate(f'{speedup:.2f}x', xy=(x[i] + width/2, i8),
+                     xytext=(0, 3), textcoords='offset points',
+                     ha='center', fontsize=7)
+
     # Add final metrics summary
     summary_parts = []
     for rd in run_data:
@@ -208,7 +267,7 @@ def create_comparison_plot(runs, save_path=None, smooth_window=20):
                  fontsize=8, family='monospace')
 
     plt.tight_layout()
-    plt.subplots_adjust(bottom=0.06)
+    plt.subplots_adjust(bottom=0.08)
 
     if save_path:
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
