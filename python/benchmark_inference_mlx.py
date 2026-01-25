@@ -17,6 +17,7 @@ import mlx.nn as nn
 # Model configs: (layers, mixers, embed_dims, mlp_ratios, pos_emb_stages)
 MODEL_CONFIGS = {
     "ft6c96": {
+        "type": "fastvit",
         "layers": [2, 2, 2],
         "mixers": ["mixer", "mixer", "attention"],
         "embed_dims": [96, 96, 96],
@@ -24,6 +25,7 @@ MODEL_CONFIGS = {
         "pos_emb_stages": [False, False, True],
     },
     "ft6c96a": {
+        "type": "fastvit",
         "layers": [2, 2, 2],
         "mixers": ["attention", "attention", "attention"],
         "embed_dims": [96, 96, 96],
@@ -31,11 +33,19 @@ MODEL_CONFIGS = {
         "pos_emb_stages": [True, True, True],
     },
     "ft8c96a": {
+        "type": "fastvit",
         "layers": [2, 2, 2, 2],
         "mixers": ["attention", "attention", "attention", "attention"],
         "embed_dims": [96, 96, 96, 96],
         "mlp_ratios": [4.0, 4.0, 4.0, 4.0],
         "pos_emb_stages": [True, True, True, True],
+    },
+    "b6c96": {
+        "type": "resnet",
+        "trunk_channels": 96,
+        "mid_channels": 96,
+        "gpool_channels": 32,
+        "blocks": ["regular", "regular", "gpool", "regular", "gpool", "regular"],
     },
 }
 
@@ -220,6 +230,163 @@ class MLXKataGoModel(nn.Module):
         return x
 
 
+# ============================================================================
+# ResNet Architecture (b6c96)
+# ============================================================================
+
+
+class KataGPool(nn.Module):
+    """
+    KataGo global pooling: mean, scaled mean (by 1/10), and max pooled features.
+    Returns concatenation of [mean, scaled_mean, max] along channel dimension.
+    """
+
+    def __call__(self, x, mask=None):
+        # x: (B, H, W, C)
+        B, H, W, C = x.shape
+        if mask is not None:
+            # mask: (B, H, W, 1)
+            x_masked = x * mask
+            num_valid = mx.sum(mask, axis=(1, 2), keepdims=True)  # (B, 1, 1, 1)
+            num_valid = mx.maximum(num_valid, 1.0)  # avoid division by zero
+            mean_pool = mx.sum(x_masked, axis=(1, 2), keepdims=False) / num_valid.squeeze((2, 3))  # (B, C)
+        else:
+            mean_pool = mx.mean(x, axis=(1, 2))  # (B, C)
+            num_valid = H * W
+
+        # Scaled mean by 1/10 (normalized by sqrt(board_area) in original KataGo)
+        scale = 0.1
+        scaled_mean = mean_pool * scale
+
+        # Max pooling
+        max_pool = mx.max(x, axis=(1, 2))  # (B, C)
+
+        # Concatenate: (B, 3*C)
+        return mx.concatenate([mean_pool, scaled_mean, max_pool], axis=-1)
+
+
+class KataConvAndGPool(nn.Module):
+    """
+    Convolution with global pooling branch (for gpool residual blocks).
+    Regular path: conv_r (3x3 conv)
+    GPool path: conv_g (3x3 conv) -> gpool -> linear_g -> add to regular output
+    """
+
+    def __init__(self, c_in: int, c_out: int, c_gpool: int = 32):
+        super().__init__()
+        # Regular path
+        self.conv_r = nn.Conv2d(c_in, c_out, kernel_size=3, padding=1, bias=False)
+        # Global pooling path
+        self.conv_g = nn.Conv2d(c_in, c_gpool, kernel_size=3, padding=1, bias=False)
+        self.gpool = KataGPool()
+        self.linear_g = nn.Linear(3 * c_gpool, c_out, bias=False)  # Quantizable
+
+    def __call__(self, x, mask=None):
+        # Regular path
+        out_r = self.conv_r(x)  # (B, H, W, c_out)
+
+        # Global pooling path
+        g = self.conv_g(x)  # (B, H, W, c_gpool)
+        g = nn.relu(g)
+        g = self.gpool(g, mask)  # (B, 3*c_gpool)
+        g = self.linear_g(g)  # (B, c_out)
+        g = g.reshape(g.shape[0], 1, 1, g.shape[1])  # (B, 1, 1, c_out)
+
+        return out_r + g  # broadcast add
+
+
+class ResBlock(nn.Module):
+    """Basic residual block with two 3x3 convolutions."""
+
+    def __init__(self, c_main: int, c_mid: int):
+        super().__init__()
+        self.conv1 = nn.Conv2d(c_main, c_mid, kernel_size=3, padding=1, bias=False)
+        self.conv2 = nn.Conv2d(c_mid, c_main, kernel_size=3, padding=1, bias=False)
+
+    def __call__(self, x, mask=None):
+        out = nn.relu(x)
+        out = self.conv1(out)
+        out = nn.relu(out)
+        out = self.conv2(out)
+        return x + out  # residual
+
+
+class ResBlockGPool(nn.Module):
+    """Residual block with global pooling in first conv."""
+
+    def __init__(self, c_main: int, c_mid: int, c_gpool: int = 32):
+        super().__init__()
+        self.conv_and_gpool = KataConvAndGPool(c_main, c_mid, c_gpool)
+        self.conv2 = nn.Conv2d(c_mid, c_main, kernel_size=3, padding=1, bias=False)
+
+    def __call__(self, x, mask=None):
+        out = nn.relu(x)
+        out = self.conv_and_gpool(out, mask)
+        out = nn.relu(out)
+        out = self.conv2(out)
+        return x + out  # residual
+
+
+class MLXKataGoResNet(nn.Module):
+    """
+    KataGo ResNet model for MLX inference benchmarking.
+
+    Input processing:
+      - conv_spatial: Conv2d(22 -> trunk_channels, 3x3)
+      - linear_global: Linear(19 -> trunk_channels), broadcast-added to spatial
+
+    Trunk: sequence of ResBlock and ResBlockGPool based on config.
+    Head: Conv2d(trunk_channels -> 1, 1x1) for minimal timing overhead.
+    """
+
+    def __init__(self, config: dict):
+        super().__init__()
+        trunk_channels = config["trunk_channels"]
+        mid_channels = config["mid_channels"]
+        gpool_channels = config["gpool_channels"]
+        blocks = config["blocks"]
+
+        # Input processing
+        self.conv_spatial = nn.Conv2d(22, trunk_channels, kernel_size=3, padding=1)
+        self.linear_global = nn.Linear(19, trunk_channels)
+
+        # Build trunk blocks
+        self.blocks = []
+        for block_type in blocks:
+            if block_type == "regular":
+                self.blocks.append(ResBlock(trunk_channels, mid_channels))
+            elif block_type == "gpool":
+                self.blocks.append(ResBlockGPool(trunk_channels, mid_channels, gpool_channels))
+            else:
+                raise ValueError(f"Unknown block type: {block_type}")
+
+        # Minimal head for timing
+        self.head = nn.Conv2d(trunk_channels, 1, kernel_size=1)
+
+    def __call__(self, spatial, global_feat, mask=None):
+        # spatial: (B, H, W, 22), global_feat: (B, 19)
+        x = self.conv_spatial(spatial)  # (B, H, W, C)
+        g = self.linear_global(global_feat)  # (B, C)
+        x = x + g.reshape(g.shape[0], 1, 1, g.shape[1])  # broadcast add
+
+        for block in self.blocks:
+            x = block(x, mask)
+
+        x = self.head(x)  # (B, H, W, 1)
+        return x
+
+
+def create_model(config: dict):
+    """Factory function to create the appropriate model type."""
+    model_type = config.get("type", "fastvit")
+    if model_type == "fastvit":
+        return MLXKataGoModel(config)
+    elif model_type == "resnet":
+        return MLXKataGoResNet(config)
+    else:
+        raise ValueError(f"Unknown model type: {model_type}")
+
+
 def count_parameters(model):
     """Count total parameters in the model."""
     params = model.parameters()
@@ -292,10 +459,11 @@ def main():
         print(f"Model: {model_name}")
 
         # FP32 benchmark
-        model_fp32 = MLXKataGoModel(config)
+        model_fp32 = create_model(config)
         mx.eval(model_fp32.parameters())
         params_fp32 = count_parameters(model_fp32)
-        print(f"  FP32 parameters: {params_fp32:,}")
+        model_type = config.get("type", "fastvit")
+        print(f"  Type: {model_type}, FP32 parameters: {params_fp32:,}")
 
         times_fp32 = benchmark_model(model_fp32, spatial, global_feat,
                                      args.num_warmup, args.num_runs)
@@ -304,13 +472,19 @@ def main():
         print(f"  FP32 - Mean: {mean_fp32:.3f} ms, Median: {median_fp32:.3f} ms")
 
         # INT8 quantized benchmark
-        model_int8 = MLXKataGoModel(config)
+        model_int8 = create_model(config)
         mx.eval(model_int8.parameters())
-        # Quantize Linear layers in stages (group_size=32 for embed_dim=96;
+        # Quantize Linear layers (group_size=32 for embed_dim=96;
         # skip linear_global: input dim 19 not group-divisible)
-        for stage in model_int8.stages:
-            for layer in stage:
-                nn.quantize(layer, bits=8, group_size=32)
+        if model_type == "fastvit":
+            for stage in model_int8.stages:
+                for layer in stage:
+                    nn.quantize(layer, bits=8, group_size=32)
+        elif model_type == "resnet":
+            # Quantize Linear layers in gpool blocks
+            for block in model_int8.blocks:
+                if hasattr(block, 'conv_and_gpool'):
+                    nn.quantize(block.conv_and_gpool.linear_g, bits=8, group_size=32)
         mx.eval(model_int8.parameters())
         params_int8 = count_parameters(model_int8)
         print(f"  INT8 parameters: {params_int8:,} (quantized Linear layers)")

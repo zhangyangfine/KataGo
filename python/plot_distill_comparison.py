@@ -51,6 +51,11 @@ RUNS = [
         "label": "E: DeepAttn ft8c96a",
         "color": "#F39C12",
     },
+    {
+        "dir": "/Users/chinchangyang/Code/KataGo-Trainings/distill-ft6c96-9x9/variant-f",
+        "label": "F: ResNet b6c96",
+        "color": "#2ECC71",
+    },
 ]
 
 
