@@ -273,6 +273,13 @@ class EMAModel:
             if param.requires_grad:
                 self.shadow[name] = param.data.clone()
 
+        # Initialize shadow buffers (for BatchNorm running stats)
+        self.shadow_buffers = {}
+        for name, buffer in model.named_buffers():
+            if 'running_mean' in name or 'running_var' in name:
+                self.shadow_buffers[name] = buffer.data.clone()
+        self.backup_buffers = {}
+
     def update(self, model: torch.nn.Module):
         """
         Update shadow parameters with current model parameters.
@@ -289,6 +296,14 @@ class EMAModel:
                     (1.0 - self.decay) * param.data
                 )
 
+        # Update shadow buffers (BatchNorm running stats)
+        for name, buffer in model.named_buffers():
+            if name in self.shadow_buffers:
+                self.shadow_buffers[name] = (
+                    self.decay * self.shadow_buffers[name] +
+                    (1.0 - self.decay) * buffer.data
+                )
+
     def apply_shadow(self, model: torch.nn.Module):
         """
         Apply shadow parameters to model (for evaluation).
@@ -302,6 +317,12 @@ class EMAModel:
                 self.backup[name] = param.data.clone()
                 param.data = self.shadow[name].clone()
 
+        # Apply shadow buffers (BatchNorm running stats)
+        for name, buffer in model.named_buffers():
+            if name in self.shadow_buffers:
+                self.backup_buffers[name] = buffer.data.clone()
+                buffer.data = self.shadow_buffers[name].clone()
+
     def restore(self, model: torch.nn.Module):
         """
         Restore original parameters to model (after evaluation).
@@ -314,14 +335,23 @@ class EMAModel:
                 param.data = self.backup[name].clone()
         self.backup = {}
 
+        # Restore buffers (BatchNorm running stats)
+        for name, buffer in model.named_buffers():
+            if name in self.backup_buffers:
+                buffer.data = self.backup_buffers[name].clone()
+        self.backup_buffers = {}
+
     def state_dict(self) -> dict:
         """Return state dict for saving."""
         return {
             'decay': self.decay,
             'shadow': self.shadow.copy(),
+            'shadow_buffers': self.shadow_buffers.copy(),
         }
 
     def load_state_dict(self, state_dict: dict):
         """Load state dict for restoring."""
         self.decay = state_dict['decay']
         self.shadow = state_dict['shadow'].copy()
+        # Backward compatibility: old checkpoints may not have shadow_buffers
+        self.shadow_buffers = state_dict.get('shadow_buffers', {}).copy()

@@ -35,10 +35,9 @@ import numpy as np
 # Variant styles: maps variant name to label and color
 # Add new variants here when created
 VARIANT_STYLES = {
-    "f":  {"label": "F: ResNet b6c96", "color": "#2ECC71"},
     "g":  {"label": "G: ResNet b10c128", "color": "#3498DB"},
-    "z":  {"label": "Z: Aggressive ft6c384 (LR=2x, QAT@5)", "color": "#1ABC9C"},
-    "ai": {"label": "AI: Feature Distill (fdw=0.1)", "color": "#9B59B6"},
+    "ak": {"label": "AK: Label Smooth + Aggressive EMA (ls=0.1, decay=0.99)", "color": "#9B59B6"},
+    "al": {"label": "AL: b6c96-fson-mish-rvglr-bnh (decay=0.99)", "color": "#E74C3C"},
 }
 
 # Default color cycle for unknown variants
@@ -103,7 +102,6 @@ def discover_runs(runs_dir, variant_filter=None):
 
 # MLX 8-bit quantized inference benchmark data (9x9, batch=1, median latency in ms)
 MLX_BENCHMARK = {
-    "b6c96":   {"fp32": 1.329, "int8": 1.143},
     "b10c128": {"fp32": 2.001, "int8": 2.072},
     "ft6c384": {"fp32": 1.831, "int8": 1.416},
 }
