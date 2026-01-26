@@ -1614,6 +1614,41 @@ ft6c384 = {
     },
 }
 
+ft6c512 = {
+    "version":15,
+    "norm_kind":"fixup",
+    "bnorm_epsilon": 1e-4,
+    "bnorm_running_avg_momentum": 0.001,
+    "initial_conv_1x1": False,
+    "initial_num_channels":512,
+    "trunk_num_channels":512,
+    "mid_num_channels":512,
+    "gpool_num_channels":128,
+    "use_attention_pool":False,
+    "num_attention_pool_heads":4,
+    "block_kind": [],
+    "trunkfinal_num_channels":512,
+    "policy_input_channels":512,
+    "p1_num_channels":64,
+    "g1_num_channels":64,
+    "v1_num_channels":128,
+    "sbv2_num_channels":128,
+    "num_scorebeliefs":8,
+    "v2_size":192,
+    "fastvit_insertion_points": [
+        "after_trunk",
+    ],
+    "fastvit_configs": {
+        "after_trunk": {
+            "layers": [2, 2, 2],
+            "embed_dim": [512, 512, 512],
+            "mlp_ratio": [3.0, 3.0, 3.0],
+            "token_mixer": ["mixer", "mixer", "attention"],
+            "pos_embed": [None, None, partial(PositionalEncoding)],
+        },
+    },
+}
+
 ft12c96 = {
     "version":15,
     "norm_kind":"fixup",
@@ -1884,6 +1919,7 @@ base_config_of_name = {
     "ft6c96x": ft6c96x,
     "ft6c192": ft6c192,
     "ft6c384": ft6c384,
+    "ft6c512": ft6c512,
     "ft12c96": ft12c96,
     "ft12c192": ft12c192,
     "ft12c384": ft12c384,
