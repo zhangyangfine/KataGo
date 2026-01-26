@@ -48,7 +48,6 @@ from katago.train.distill_loss import (
     distillation_loss_policy,
     distillation_loss_value,
     distillation_loss_ownership,
-    distillation_loss_features,
     cross_entropy_with_label_smoothing,
     EMAModel,
 )
@@ -127,10 +126,6 @@ if __name__ == "__main__":
     optional_args.add_argument('-qat-start-epoch', help='Epoch to activate fake quantization', type=int, default=10)
     optional_args.add_argument('-qat-bits', help='Quantization bit width', type=int, default=8)
     optional_args.add_argument('-qat-group-size', help='Group size for per-group quantization', type=int, default=32)
-
-    # Feature distillation arguments
-    optional_args.add_argument('-feature-distill-weight', help='Weight for feature distillation loss', type=float, default=0.0)
-    optional_args.add_argument('-feature-extraction-points', help='Teacher block indices for feature extraction (comma-separated)', type=str, default="6,12,18")
 
     # Other options
     optional_args.add_argument('-use-teacher-swa', help='Use SWA weights from teacher', action='store_true')
@@ -323,44 +318,6 @@ def compute_distillation_loss(student_outputs, teacher_outputs, batch, args):
     return losses
 
 
-def forward_student_with_features(model, batch):
-    """
-    Forward student model extracting FastViT stage features.
-
-    This is used when feature distillation is enabled to extract intermediate
-    features from the FastViT trunk.
-
-    Args:
-        model: Student model with FastViT trunk
-        batch: Input batch dictionary
-
-    Returns:
-        Tuple of (outputs, stage_features)
-    """
-    input_spatial = batch["binaryInputNCHW"]
-    input_global = batch["globalInputNC"]
-
-    mask = input_spatial[:, 0:1, :, :].contiguous()
-    mask_sum_hw = torch.sum(mask, dim=(2, 3), keepdim=True)
-    mask_sum = torch.sum(mask)
-
-    out = model.conv_spatial(input_spatial) + model.linear_global(input_global).unsqueeze(-1).unsqueeze(-1)
-
-    # FastViT forward with features
-    fastvit_trunk = model.fastvit_trunks["after_trunk"]
-    out, stage_features = fastvit_trunk.forward_with_features(out)
-
-    out = model.norm_trunkfinal(out, mask=mask, mask_sum=mask_sum)
-    out = model.act_trunkfinal(out)
-
-    out_policy = model.policy_head(out, mask=mask, mask_sum_hw=mask_sum_hw, mask_sum=mask_sum, extra_outputs=None)
-    value_outputs = model.value_head(out, mask=mask, mask_sum_hw=mask_sum_hw, mask_sum=mask_sum,
-                                      input_global=input_global, extra_outputs=None)
-
-    outputs = ((out_policy,) + value_outputs,)
-    return outputs, stage_features
-
-
 # ==============================================================================
 # MAIN TRAINING FUNCTION
 # ==============================================================================
@@ -465,14 +422,6 @@ def main(args):
         n_wrapped = apply_qat_to_model(student_model, bits=args["qat_bits"], group_size=args["qat_group_size"])
         set_qat_enabled(student_model, enabled=False)  # warmup phase
         logging.info(f"QAT: {n_wrapped} layers wrapped, activation at epoch {qat_start_epoch}")
-
-    # Feature distillation setup
-    feature_distill_weight = args["feature_distill_weight"]
-    if feature_distill_weight > 0:
-        extraction_points = [int(x) for x in args["feature_extraction_points"].split(",")]
-        logging.info(f"Feature distillation enabled: weight={feature_distill_weight}, points={extraction_points}")
-    else:
-        extraction_points = []
 
     # Create optimizer
     optimizer = torch.optim.AdamW(
@@ -680,38 +629,18 @@ def main(args):
 
                 # Forward pass
                 with torch.no_grad():
-                    if feature_distill_weight > 0 and extraction_points:
-                        teacher_outputs, teacher_features = teacher_model.forward_with_features(
-                            batch["binaryInputNCHW"],
-                            batch["globalInputNC"],
-                            extraction_points
-                        )
-                    else:
-                        teacher_outputs = teacher_model(
-                            batch["binaryInputNCHW"],
-                            batch["globalInputNC"],
-                        )
-                        teacher_features = []
-
-                if feature_distill_weight > 0 and "after_trunk" in student_model.fastvit_trunks:
-                    # Use custom forward for student to extract FastViT stage features
-                    student_outputs, student_features = forward_student_with_features(student_model, batch)
-                else:
-                    student_outputs = student_model(
+                    teacher_outputs = teacher_model(
                         batch["binaryInputNCHW"],
                         batch["globalInputNC"],
                     )
-                    student_features = []
+
+                student_outputs = student_model(
+                    batch["binaryInputNCHW"],
+                    batch["globalInputNC"],
+                )
 
                 # Compute loss
                 losses = compute_distillation_loss(student_outputs, teacher_outputs, batch, args)
-
-                # Add feature distillation loss if enabled
-                if feature_distill_weight > 0 and student_features and teacher_features:
-                    feature_loss = distillation_loss_features(student_features, teacher_features)
-                    losses['feature_loss'] = feature_loss
-                    losses['total_loss'] = losses['total_loss'] + feature_distill_weight * feature_loss
-
                 loss = losses['total_loss']
 
                 # Backward pass
