@@ -123,22 +123,12 @@ MODEL_CONFIGS = {
 }
 
 
-def softplus(x):
-    """Softplus activation: log(1 + exp(x))"""
-    return mx.log(1 + mx.exp(x))
-
-
-def mish(x):
-    """Mish activation: x * tanh(softplus(x))"""
-    return x * mx.tanh(softplus(x))
-
-
 def get_activation(name: str):
     """Get activation function by name."""
     if name == "relu":
         return nn.relu
     elif name == "mish":
-        return mish
+        return nn.mish
     else:
         raise ValueError(f"Unknown activation: {name}")
 
