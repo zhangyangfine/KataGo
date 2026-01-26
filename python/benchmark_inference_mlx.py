@@ -56,6 +56,14 @@ MODEL_CONFIGS = {
         "mlp_ratios": [3.0, 3.0, 3.0],
         "pos_emb_stages": [False, False, True],
     },
+    "ft6c384-fson-gelu-rvglr-bnh": {
+        "type": "fastvit",
+        "layers": [2, 2, 2],
+        "mixers": ["mixer", "mixer", "attention"],
+        "embed_dims": [384, 384, 384],
+        "mlp_ratios": [3.0, 3.0, 3.0],
+        "pos_emb_stages": [False, False, True],
+    },
     "ft12c384": {
         "type": "fastvit",
         "layers": [2, 2, 6, 2],
@@ -85,6 +93,15 @@ MODEL_CONFIGS = {
         "mid_channels": 96,
         "gpool_channels": 32,
         "blocks": ["regular", "regular", "gpool", "regular", "gpool", "regular"],
+        "activation": "mish",
+    },
+    "b10c128-fson-mish-rvglr-bnh": {
+        "type": "resnet",
+        "trunk_channels": 128,
+        "mid_channels": 128,
+        "gpool_channels": 32,
+        "blocks": ["regular", "regular", "regular", "regular", "gpool",
+                   "regular", "regular", "gpool", "regular", "regular"],
         "activation": "mish",
     },
 }
