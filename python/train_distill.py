@@ -675,6 +675,27 @@ def main(args):
                     if enable_qat:
                         avg_metrics['qat_enabled'] = epoch >= qat_start_epoch
 
+                    # Evaluate EMA model loss on current batch
+                    ema_model.apply_shadow(student_model)
+                    was_training = student_model.training
+                    student_model.eval()
+                    try:
+                        with torch.no_grad():
+                            ema_outputs = student_model(
+                                batch["binaryInputNCHW"],
+                                batch["globalInputNC"],
+                            )
+                            ema_losses = compute_distillation_loss(
+                                ema_outputs, teacher_outputs, batch, args
+                            )
+                            avg_metrics['ema_soft_policy_loss'] = ema_losses['soft_policy_loss'].item()
+                            avg_metrics['ema_soft_value_loss'] = ema_losses['soft_value_loss'].item()
+                            avg_metrics['ema_total_loss'] = ema_losses['total_loss'].item()
+                    finally:
+                        ema_model.restore(student_model)
+                        if was_training:
+                            student_model.train()
+
                     log_metrics(avg_metrics, train_metrics_file, train_state)
 
                     logging.info(

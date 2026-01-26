@@ -38,8 +38,8 @@ VARIANT_STYLES = {
     "f":  {"label": "F: ResNet b6c96", "color": "#2ECC71"},
     "g":  {"label": "G: ResNet b10c128", "color": "#3498DB"},
     "z":  {"label": "Z: Aggressive ft6c384 (LR=2x, QAT@5)", "color": "#1ABC9C"},
-    "ac": {"label": "AC: Batch 2x ft6c384 (batch=64)", "color": "#E67E22"},
     "ae": {"label": "AE: Later QAT ft6c384 (QAT@10)", "color": "#9B59B6"},
+    "ag": {"label": "AG: Lower WD ft6c384 (wd=0.02)", "color": "#F39C12"},
 }
 
 # Default color cycle for unknown variants
@@ -201,10 +201,16 @@ def create_comparison_plot(runs, save_path=None, smooth_window=20, max_points=10
                      color=rd['color'], linewidth=2, linestyle=linestyles[i % len(linestyles)],
                      label=rd['label'])
             ax1.plot(rd['samples'], data, alpha=0.15, color=rd['color'], linewidth=0.5)
+        # Plot EMA soft policy loss as dashed line (same color)
+        if 'ema_soft_policy_loss' in rd['metrics']:
+            ema_data = np.array(rd['metrics']['ema_soft_policy_loss'])
+            ax1.plot(rd['samples'], smooth_data(ema_data, smooth_window),
+                     color=rd['color'], linewidth=1.5, linestyle='--', alpha=0.7,
+                     label=f"{rd['label']} (EMA)")
 
     ax1.set_xlabel('Samples')
     ax1.set_ylabel('Soft Policy Loss')
-    ax1.set_title('Soft Policy Loss')
+    ax1.set_title('Soft Policy Loss (dashed=EMA)')
     ax1.legend(loc='upper right', fontsize=8)
     ax1.grid(True, alpha=0.3)
 
@@ -219,10 +225,16 @@ def create_comparison_plot(runs, save_path=None, smooth_window=20, max_points=10
                      color=rd['color'], linewidth=2, linestyle=linestyles[i % len(linestyles)],
                      label=rd['label'])
             ax2.plot(rd['samples'], data, alpha=0.15, color=rd['color'], linewidth=0.5)
+        # Plot EMA soft value loss as dashed line (same color)
+        if 'ema_soft_value_loss' in rd['metrics']:
+            ema_data = np.array(rd['metrics']['ema_soft_value_loss'])
+            ax2.plot(rd['samples'], smooth_data(ema_data, smooth_window),
+                     color=rd['color'], linewidth=1.5, linestyle='--', alpha=0.7,
+                     label=f"{rd['label']} (EMA)")
 
     ax2.set_xlabel('Samples')
     ax2.set_ylabel('Soft Value Loss')
-    ax2.set_title('Soft Value Loss')
+    ax2.set_title('Soft Value Loss (dashed=EMA)')
     ax2.legend(loc='upper right', fontsize=8)
     ax2.grid(True, alpha=0.3)
 
@@ -279,7 +291,12 @@ def create_comparison_plot(runs, save_path=None, smooth_window=20, max_points=10
         if 'soft_policy_loss' in rd['metrics']:
             final_soft = rd['metrics']['soft_policy_loss'][-1]
             min_soft = min(rd['metrics']['soft_policy_loss'])
-            summary_parts.append(f"{rd['label']}: final={final_soft:.3f}, min={min_soft:.3f}")
+            # Include EMA min if available
+            if 'ema_soft_policy_loss' in rd['metrics']:
+                ema_min_soft = min(rd['metrics']['ema_soft_policy_loss'])
+                summary_parts.append(f"{rd['label']}: min={min_soft:.3f}, ema_min={ema_min_soft:.3f}")
+            else:
+                summary_parts.append(f"{rd['label']}: final={final_soft:.3f}, min={min_soft:.3f}")
 
     if summary_parts:
         fig.text(0.02, 0.02, "Soft Policy Loss  |  " + "  |  ".join(summary_parts),
