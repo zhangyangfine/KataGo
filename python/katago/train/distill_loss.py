@@ -86,6 +86,7 @@ def distillation_loss_ownership(student_logits: torch.Tensor,
 def distillation_loss_features(
     student_features: list,
     teacher_features: list,
+    device: torch.device = None,
 ) -> torch.Tensor:
     """
     Compute feature distillation loss using MSE on normalized intermediate feature maps.
@@ -93,12 +94,13 @@ def distillation_loss_features(
     Args:
         student_features: List of student intermediate feature tensors
         teacher_features: List of teacher intermediate feature tensors
+        device: Device to place the result tensor on (for empty feature case)
 
     Returns:
         Scalar MSE loss averaged over all feature pairs
     """
     if not student_features or not teacher_features:
-        return torch.tensor(0.0)
+        return torch.tensor(0.0, device=device)
 
     total_loss = 0.0
     for s_feat, t_feat in zip(student_features, teacher_features):

@@ -677,10 +677,10 @@ def main(args):
                         avg_metrics['qat_enabled'] = epoch >= qat_start_epoch
 
                     # Evaluate EMA model loss on current batch
-                    ema_model.apply_shadow(student_model)
                     was_training = student_model.training
-                    student_model.eval()
                     try:
+                        ema_model.apply_shadow(student_model)
+                        student_model.eval()
                         with torch.no_grad():
                             ema_outputs = student_model(
                                 batch["binaryInputNCHW"],
