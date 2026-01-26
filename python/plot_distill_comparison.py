@@ -2,11 +2,13 @@
 """
 Plot Comparison of Multiple Distillation Training Runs
 
-Creates a 4-panel plot comparing loss curves across training variants:
-1. Soft Policy Loss - all runs
-2. Soft Value Loss - all runs
-3. Learning Rate (cosine decay) - all runs
-4. MLX Inference Time (FP32 vs INT8 bar chart)
+Creates a 6-panel plot comparing loss curves across training variants:
+1. Soft Policy Loss (Train) - all runs
+2. Soft Value Loss (Train) - all runs
+3. EMA Soft Policy Loss - all runs
+4. EMA Soft Value Loss - all runs
+5. Learning Rate (cosine decay) - all runs
+6. MLX Inference Time (FP32 vs INT8 bar chart)
 
 Usage:
     # With explicit arguments
@@ -38,7 +40,6 @@ VARIANT_STYLES = {
     "g":  {"label": "G: ResNet b10c128", "color": "#3498DB"},
     "al": {"label": "AL: b6c96-fson-mish-rvglr-bnh (decay=0.99)", "color": "#E74C3C"},
     "am": {"label": "AM: b10c128-fson-mish-rvglr-bnh (decay=0.99)", "color": "#F39C12"},
-    "an": {"label": "AN: ft6c384 (decay=0.99)", "color": "#27AE60"},
     "ao": {"label": "AO: ft6c384 (decay=0.995)", "color": "#9B59B6"},
     "ap": {"label": "AP: ft6c512 (decay=0.995)", "color": "#1ABC9C"},
     "aq": {"label": "AQ: ft12c384 (decay=0.995)", "color": "#E91E63"},
@@ -189,13 +190,13 @@ def create_comparison_plot(runs, save_path=None, smooth_window=20, max_points=10
         return False
 
     # Create figure with subplots
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    fig, axes = plt.subplots(3, 2, figsize=(14, 14))
     fig.suptitle('9x9 Distillation Training Comparison (FastVIT variants)', fontsize=14, fontweight='bold')
 
     linestyles = ['-', '--', ':', '-.', (0, (3, 1, 1, 1))]
 
     # ==========================
-    # Panel 1: Soft Policy Loss
+    # Panel 1: Soft Policy Loss (Train)
     # ==========================
     ax1 = axes[0, 0]
     for i, rd in enumerate(run_data):
@@ -205,21 +206,15 @@ def create_comparison_plot(runs, save_path=None, smooth_window=20, max_points=10
                      color=rd['color'], linewidth=2, linestyle=linestyles[i % len(linestyles)],
                      label=rd['label'])
             ax1.plot(rd['samples'], data, alpha=0.15, color=rd['color'], linewidth=0.5)
-        # Plot EMA soft policy loss as dashed line (same color)
-        if 'ema_soft_policy_loss' in rd['metrics']:
-            ema_data = np.array(rd['metrics']['ema_soft_policy_loss'])
-            ax1.plot(rd['samples'], smooth_data(ema_data, smooth_window),
-                     color=rd['color'], linewidth=1.5, linestyle='--', alpha=0.7,
-                     label=f"{rd['label']} (EMA)")
 
     ax1.set_xlabel('Samples')
     ax1.set_ylabel('Soft Policy Loss')
-    ax1.set_title('Soft Policy Loss (dashed=EMA)')
+    ax1.set_title('Soft Policy Loss (Train)')
     ax1.legend(loc='upper right', fontsize=8)
     ax1.grid(True, alpha=0.3)
 
     # ==========================
-    # Panel 2: Soft Value Loss
+    # Panel 2: Soft Value Loss (Train)
     # ==========================
     ax2 = axes[0, 1]
     for i, rd in enumerate(run_data):
@@ -229,41 +224,71 @@ def create_comparison_plot(runs, save_path=None, smooth_window=20, max_points=10
                      color=rd['color'], linewidth=2, linestyle=linestyles[i % len(linestyles)],
                      label=rd['label'])
             ax2.plot(rd['samples'], data, alpha=0.15, color=rd['color'], linewidth=0.5)
-        # Plot EMA soft value loss as dashed line (same color)
-        if 'ema_soft_value_loss' in rd['metrics']:
-            ema_data = np.array(rd['metrics']['ema_soft_value_loss'])
-            ax2.plot(rd['samples'], smooth_data(ema_data, smooth_window),
-                     color=rd['color'], linewidth=1.5, linestyle='--', alpha=0.7,
-                     label=f"{rd['label']} (EMA)")
 
     ax2.set_xlabel('Samples')
     ax2.set_ylabel('Soft Value Loss')
-    ax2.set_title('Soft Value Loss (dashed=EMA)')
+    ax2.set_title('Soft Value Loss (Train)')
     ax2.legend(loc='upper right', fontsize=8)
     ax2.grid(True, alpha=0.3)
 
     # ==========================
-    # Panel 3: Learning Rate (Cosine Decay)
+    # Panel 3: EMA Soft Policy Loss
     # ==========================
     ax3 = axes[1, 0]
     for i, rd in enumerate(run_data):
+        if 'ema_soft_policy_loss' in rd['metrics']:
+            data = np.array(rd['metrics']['ema_soft_policy_loss'])
+            ax3.plot(rd['samples'], smooth_data(data, smooth_window),
+                     color=rd['color'], linewidth=2, linestyle=linestyles[i % len(linestyles)],
+                     label=rd['label'])
+            ax3.plot(rd['samples'], data, alpha=0.15, color=rd['color'], linewidth=0.5)
+
+    ax3.set_xlabel('Samples')
+    ax3.set_ylabel('EMA Soft Policy Loss')
+    ax3.set_title('EMA Soft Policy Loss')
+    ax3.legend(loc='upper right', fontsize=8)
+    ax3.grid(True, alpha=0.3)
+
+    # ==========================
+    # Panel 4: EMA Soft Value Loss
+    # ==========================
+    ax4 = axes[1, 1]
+    for i, rd in enumerate(run_data):
+        if 'ema_soft_value_loss' in rd['metrics']:
+            data = np.array(rd['metrics']['ema_soft_value_loss'])
+            ax4.plot(rd['samples'], smooth_data(data, smooth_window),
+                     color=rd['color'], linewidth=2, linestyle=linestyles[i % len(linestyles)],
+                     label=rd['label'])
+            ax4.plot(rd['samples'], data, alpha=0.15, color=rd['color'], linewidth=0.5)
+
+    ax4.set_xlabel('Samples')
+    ax4.set_ylabel('EMA Soft Value Loss')
+    ax4.set_title('EMA Soft Value Loss')
+    ax4.legend(loc='upper right', fontsize=8)
+    ax4.grid(True, alpha=0.3)
+
+    # ==========================
+    # Panel 5: Learning Rate (Cosine Decay)
+    # ==========================
+    ax5 = axes[2, 0]
+    for i, rd in enumerate(run_data):
         if 'lr' in rd['metrics']:
             data = np.array(rd['metrics']['lr'])
-            ax3.plot(rd['samples'], data, color=rd['color'],
+            ax5.plot(rd['samples'], data, color=rd['color'],
                      linewidth=2, linestyle=linestyles[i % len(linestyles)],
                      label=rd['label'])
 
-    ax3.set_xlabel('Samples')
-    ax3.set_ylabel('Learning Rate')
-    ax3.set_title('Learning Rate (Cosine Decay)')
-    ax3.legend(loc='upper right', fontsize=8)
-    ax3.grid(True, alpha=0.3)
-    ax3.ticklabel_format(style='scientific', axis='y', scilimits=(0, 0))
+    ax5.set_xlabel('Samples')
+    ax5.set_ylabel('Learning Rate')
+    ax5.set_title('Learning Rate (Cosine Decay)')
+    ax5.legend(loc='upper right', fontsize=8)
+    ax5.grid(True, alpha=0.3)
+    ax5.ticklabel_format(style='scientific', axis='y', scilimits=(0, 0))
 
     # ==========================
-    # Panel 4: MLX Inference Time (Bar Chart)
+    # Panel 6: MLX Inference Time (Bar Chart)
     # ==========================
-    ax4 = axes[1, 1]
+    ax6 = axes[2, 1]
     models = list(MLX_BENCHMARK.keys())
     x = np.arange(len(models))
     width = 0.35
@@ -271,43 +296,25 @@ def create_comparison_plot(runs, save_path=None, smooth_window=20, max_points=10
     fp32_vals = [MLX_BENCHMARK[m]['fp32'] for m in models]
     int8_vals = [MLX_BENCHMARK[m]['int8'] for m in models]
 
-    ax4.bar(x - width/2, fp32_vals, width, label='FP32', color='#3498DB')
-    ax4.bar(x + width/2, int8_vals, width, label='INT8', color='#2ECC71')
+    ax6.bar(x - width/2, fp32_vals, width, label='FP32', color='#3498DB')
+    ax6.bar(x + width/2, int8_vals, width, label='INT8', color='#2ECC71')
 
-    ax4.set_xlabel('Model')
-    ax4.set_ylabel('Latency (ms)')
-    ax4.set_title('MLX Inference Time (9x9, batch=1, median)')
-    ax4.set_xticks(x)
-    ax4.set_xticklabels(models, rotation=45, ha='right')
-    ax4.legend()
-    ax4.grid(True, alpha=0.3, axis='y')
+    ax6.set_xlabel('Model')
+    ax6.set_ylabel('Latency (ms)')
+    ax6.set_title('MLX Inference Time (9x9, batch=1, median)')
+    ax6.set_xticks(x)
+    ax6.set_xticklabels(models, rotation=45, ha='right')
+    ax6.legend()
+    ax6.grid(True, alpha=0.3, axis='y')
 
     # Add speedup annotations
     for i, (f, i8) in enumerate(zip(fp32_vals, int8_vals)):
         speedup = f / i8
-        ax4.annotate(f'{speedup:.2f}x', xy=(x[i] + width/2, i8),
+        ax6.annotate(f'{speedup:.2f}x', xy=(x[i] + width/2, i8),
                      xytext=(0, 3), textcoords='offset points',
                      ha='center', fontsize=7)
 
-    # Add final metrics summary
-    summary_parts = []
-    for rd in run_data:
-        if 'soft_policy_loss' in rd['metrics']:
-            final_soft = rd['metrics']['soft_policy_loss'][-1]
-            min_soft = min(rd['metrics']['soft_policy_loss'])
-            # Include EMA min if available
-            if 'ema_soft_policy_loss' in rd['metrics']:
-                ema_min_soft = min(rd['metrics']['ema_soft_policy_loss'])
-                summary_parts.append(f"{rd['label']}: min={min_soft:.3f}, ema_min={ema_min_soft:.3f}")
-            else:
-                summary_parts.append(f"{rd['label']}: final={final_soft:.3f}, min={min_soft:.3f}")
-
-    if summary_parts:
-        fig.text(0.02, 0.02, "Soft Policy Loss  |  " + "  |  ".join(summary_parts),
-                 fontsize=8, family='monospace')
-
     plt.tight_layout()
-    plt.subplots_adjust(bottom=0.08)
 
     if save_path:
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
