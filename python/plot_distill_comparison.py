@@ -36,7 +36,6 @@ import numpy as np
 # Add new variants here when created
 VARIANT_STYLES = {
     "g":  {"label": "G: ResNet b10c128", "color": "#3498DB"},
-    "ak": {"label": "AK: Label Smooth + Aggressive EMA (ls=0.1, decay=0.99)", "color": "#9B59B6"},
     "al": {"label": "AL: b6c96-fson-mish-rvglr-bnh (decay=0.99)", "color": "#E74C3C"},
 }
 
@@ -103,7 +102,6 @@ def discover_runs(runs_dir, variant_filter=None):
 # MLX 8-bit quantized inference benchmark data (9x9, batch=1, median latency in ms)
 MLX_BENCHMARK = {
     "b10c128": {"fp32": 2.001, "int8": 2.072},
-    "ft6c384": {"fp32": 1.831, "int8": 1.416},
 }
 
 
