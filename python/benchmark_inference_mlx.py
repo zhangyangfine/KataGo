@@ -79,7 +79,35 @@ MODEL_CONFIGS = {
         "blocks": ["regular", "regular", "regular", "regular", "gpool",
                    "regular", "regular", "gpool", "regular", "regular"],
     },
+    "b6c96-fson-mish-rvglr-bnh": {
+        "type": "resnet",
+        "trunk_channels": 96,
+        "mid_channels": 96,
+        "gpool_channels": 32,
+        "blocks": ["regular", "regular", "gpool", "regular", "gpool", "regular"],
+        "activation": "mish",
+    },
 }
+
+
+def softplus(x):
+    """Softplus activation: log(1 + exp(x))"""
+    return mx.log(1 + mx.exp(x))
+
+
+def mish(x):
+    """Mish activation: x * tanh(softplus(x))"""
+    return x * mx.tanh(softplus(x))
+
+
+def get_activation(name: str):
+    """Get activation function by name."""
+    if name == "relu":
+        return nn.relu
+    elif name == "mish":
+        return mish
+    else:
+        raise ValueError(f"Unknown activation: {name}")
 
 
 class PositionalEncoding(nn.Module):
@@ -380,7 +408,7 @@ class KataConvAndGPool(nn.Module):
     GPool path: conv_g (3x3 conv) -> gpool -> linear_g -> add to regular output
     """
 
-    def __init__(self, c_in: int, c_out: int, c_gpool: int = 32):
+    def __init__(self, c_in: int, c_out: int, c_gpool: int = 32, activation: str = "relu"):
         super().__init__()
         # Regular path
         self.conv_r = nn.Conv2d(c_in, c_out, kernel_size=3, padding=1, bias=False)
@@ -388,6 +416,7 @@ class KataConvAndGPool(nn.Module):
         self.conv_g = nn.Conv2d(c_in, c_gpool, kernel_size=3, padding=1, bias=False)
         self.gpool = KataGPool()
         self.linear_g = nn.Linear(3 * c_gpool, c_out, bias=False)  # Quantizable
+        self.act = get_activation(activation)
 
     def __call__(self, x, mask=None):
         # Regular path
@@ -395,7 +424,7 @@ class KataConvAndGPool(nn.Module):
 
         # Global pooling path
         g = self.conv_g(x)  # (B, H, W, c_gpool)
-        g = nn.relu(g)
+        g = self.act(g)
         g = self.gpool(g, mask)  # (B, 3*c_gpool)
         g = self.linear_g(g)  # (B, c_out)
         g = g.reshape(g.shape[0], 1, 1, g.shape[1])  # (B, 1, 1, c_out)
@@ -406,15 +435,16 @@ class KataConvAndGPool(nn.Module):
 class ResBlock(nn.Module):
     """Basic residual block with two 3x3 convolutions."""
 
-    def __init__(self, c_main: int, c_mid: int):
+    def __init__(self, c_main: int, c_mid: int, activation: str = "relu"):
         super().__init__()
         self.conv1 = nn.Conv2d(c_main, c_mid, kernel_size=3, padding=1, bias=False)
         self.conv2 = nn.Conv2d(c_mid, c_main, kernel_size=3, padding=1, bias=False)
+        self.act = get_activation(activation)
 
     def __call__(self, x, mask=None):
-        out = nn.relu(x)
+        out = self.act(x)
         out = self.conv1(out)
-        out = nn.relu(out)
+        out = self.act(out)
         out = self.conv2(out)
         return x + out  # residual
 
@@ -422,15 +452,16 @@ class ResBlock(nn.Module):
 class ResBlockGPool(nn.Module):
     """Residual block with global pooling in first conv."""
 
-    def __init__(self, c_main: int, c_mid: int, c_gpool: int = 32):
+    def __init__(self, c_main: int, c_mid: int, c_gpool: int = 32, activation: str = "relu"):
         super().__init__()
-        self.conv_and_gpool = KataConvAndGPool(c_main, c_mid, c_gpool)
+        self.conv_and_gpool = KataConvAndGPool(c_main, c_mid, c_gpool, activation)
         self.conv2 = nn.Conv2d(c_mid, c_main, kernel_size=3, padding=1, bias=False)
+        self.act = get_activation(activation)
 
     def __call__(self, x, mask=None):
-        out = nn.relu(x)
+        out = self.act(x)
         out = self.conv_and_gpool(out, mask)
-        out = nn.relu(out)
+        out = self.act(out)
         out = self.conv2(out)
         return x + out  # residual
 
@@ -453,6 +484,7 @@ class MLXKataGoResNet(nn.Module):
         mid_channels = config["mid_channels"]
         gpool_channels = config["gpool_channels"]
         blocks = config["blocks"]
+        activation = config.get("activation", "relu")
 
         # Input processing
         self.conv_spatial = nn.Conv2d(22, trunk_channels, kernel_size=3, padding=1)
@@ -462,9 +494,9 @@ class MLXKataGoResNet(nn.Module):
         self.blocks = []
         for block_type in blocks:
             if block_type == "regular":
-                self.blocks.append(ResBlock(trunk_channels, mid_channels))
+                self.blocks.append(ResBlock(trunk_channels, mid_channels, activation))
             elif block_type == "gpool":
-                self.blocks.append(ResBlockGPool(trunk_channels, mid_channels, gpool_channels))
+                self.blocks.append(ResBlockGPool(trunk_channels, mid_channels, gpool_channels, activation))
             else:
                 raise ValueError(f"Unknown block type: {block_type}")
 
