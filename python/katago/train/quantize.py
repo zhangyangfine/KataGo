@@ -203,3 +203,5 @@ def count_qat_layers(model: nn.Module) -> dict:
         "total": n_linear + n_conv,
         "enabled": enabled,
     }
+
+

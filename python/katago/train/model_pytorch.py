@@ -2088,6 +2088,82 @@ class Model(torch.nn.Module):
                 out_scorebelief_logprobs,
             ),)
 
+    def forward_with_features(
+        self,
+        input_spatial,
+        input_global,
+        extraction_points,
+        input_meta=None,
+    ):
+        """
+        Forward pass returning intermediate block features at specified points.
+
+        Args:
+            input_spatial: Spatial input tensor
+            input_global: Global input tensor
+            extraction_points: List of block indices (1-indexed) at which to extract features
+            input_meta: Optional metadata input
+
+        Returns:
+            Tuple of (outputs, intermediate_features)
+            - outputs: Same as forward() return value
+            - intermediate_features: List of feature tensors extracted at specified block indices
+        """
+        mask = input_spatial[:, 0:1, :, :].contiguous()
+        mask_sum_hw = torch.sum(mask, dim=(2, 3), keepdim=True)
+        mask_sum = torch.sum(mask)
+
+        x_spatial = self.conv_spatial(input_spatial)
+        x_global = self.linear_global(input_global).unsqueeze(-1).unsqueeze(-1)
+        out = x_spatial + x_global
+
+        if self.metadata_encoder is not None and input_meta is not None:
+            x_meta = self.metadata_encoder.forward(input_meta, None)
+            out = out + x_meta.unsqueeze(-1).unsqueeze(-1)
+
+        if "before_trunk" in self.fastvit_trunks:
+            out = self.fastvit_trunks["before_trunk"](out)
+
+        # Extract features at specified block indices
+        extraction_set = set(extraction_points)
+        intermediate_features = []
+        for block_idx, block in enumerate(self.blocks, start=1):
+            out = block(out, mask=mask, mask_sum_hw=mask_sum_hw, mask_sum=mask_sum, extra_outputs=None)
+            if block_idx in extraction_set:
+                intermediate_features.append(out.clone())
+
+        if "after_trunk" in self.fastvit_trunks:
+            out = self.fastvit_trunks["after_trunk"](out)
+
+        out = self.norm_trunkfinal(out, mask=mask, mask_sum=mask_sum)
+        out = self.act_trunkfinal(out)
+
+        # Policy and value heads
+        out_policy = self.policy_head(out, mask=mask, mask_sum_hw=mask_sum_hw, mask_sum=mask_sum, extra_outputs=None)
+        (
+            out_value,
+            out_miscvalue,
+            out_moremiscvalue,
+            out_ownership,
+            out_scoring,
+            out_futurepos,
+            out_seki,
+            out_scorebelief_logprobs,
+        ) = self.value_head(out, mask=mask, mask_sum_hw=mask_sum_hw, mask_sum=mask_sum, input_global=input_global, extra_outputs=None)
+
+        outputs = ((
+            out_policy,
+            out_value,
+            out_miscvalue,
+            out_moremiscvalue,
+            out_ownership,
+            out_scoring,
+            out_futurepos,
+            out_seki,
+            out_scorebelief_logprobs,
+        ),)
+        return outputs, intermediate_features
+
     def float32ify_output(self, outputs_byheads):
         return tuple(self.float32ify_single_heads_output(outputs) for outputs in outputs_byheads)
 

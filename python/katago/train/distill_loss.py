@@ -83,6 +83,32 @@ def distillation_loss_ownership(student_logits: torch.Tensor,
     return F.mse_loss(student_logits, teacher_logits)
 
 
+def distillation_loss_features(
+    student_features: list,
+    teacher_features: list,
+) -> torch.Tensor:
+    """
+    Compute feature distillation loss using MSE on normalized intermediate feature maps.
+
+    Args:
+        student_features: List of student intermediate feature tensors
+        teacher_features: List of teacher intermediate feature tensors
+
+    Returns:
+        Scalar MSE loss averaged over all feature pairs
+    """
+    if not student_features or not teacher_features:
+        return torch.tensor(0.0)
+
+    total_loss = 0.0
+    for s_feat, t_feat in zip(student_features, teacher_features):
+        # Normalize and compute MSE
+        s_norm = F.normalize(s_feat.flatten(2), dim=-1)
+        t_norm = F.normalize(t_feat.detach().flatten(2), dim=-1)
+        total_loss += F.mse_loss(s_norm, t_norm)
+    return total_loss / len(student_features)
+
+
 def cross_entropy_with_label_smoothing(pred_logits: torch.Tensor,
                                         target: torch.Tensor,
                                         smoothing: float = 0.1) -> torch.Tensor:

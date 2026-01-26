@@ -38,8 +38,7 @@ VARIANT_STYLES = {
     "f":  {"label": "F: ResNet b6c96", "color": "#2ECC71"},
     "g":  {"label": "G: ResNet b10c128", "color": "#3498DB"},
     "z":  {"label": "Z: Aggressive ft6c384 (LR=2x, QAT@5)", "color": "#1ABC9C"},
-    "ae": {"label": "AE: Later QAT ft6c384 (QAT@10)", "color": "#9B59B6"},
-    "ag": {"label": "AG: Lower WD ft6c384 (wd=0.02)", "color": "#F39C12"},
+    "ai": {"label": "AI: Feature Distill (fdw=0.1)", "color": "#9B59B6"},
 }
 
 # Default color cycle for unknown variants

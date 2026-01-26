@@ -1171,3 +1171,25 @@ class FastViTModel(nn.Module):
         Forward pass through the model.
         """
         return self.forward_tokens(x, return_original_size=True)
+
+    def forward_with_features(self, x: torch.Tensor):
+        """
+        Forward pass returning intermediate stage features.
+
+        Returns:
+            Tuple of (output, list of stage features)
+        """
+        _, _, orig_h, orig_w = x.shape
+        stage_features = []
+
+        for stage_idx, layer in enumerate(self.network):
+            x = layer(x)
+            if isinstance(layer, torch.nn.Sequential):
+                stage_features.append(x.clone())
+            if stage_idx < len(self.transitions):
+                x = self.transitions[stage_idx](x)
+
+        if self.uses_patch_merge and self.patch_upsample is not None:
+            x = self.patch_upsample(x, orig_h, orig_w)
+
+        return x, stage_features
