@@ -38,11 +38,10 @@ import numpy as np
 # Add new variants here when created
 VARIANT_STYLES = {
     "g":  {"label": "G: ResNet b10c128", "color": "#3498DB"},
-    "al": {"label": "AL: b6c96-fson-mish-rvglr-bnh (decay=0.99)", "color": "#E74C3C"},
-    "am": {"label": "AM: b10c128-fson-mish-rvglr-bnh (decay=0.99)", "color": "#F39C12"},
-    "ao": {"label": "AO: ft6c384 (decay=0.995)", "color": "#9B59B6"},
-    "ap": {"label": "AP: ft6c512 (decay=0.995)", "color": "#1ABC9C"},
-    "aq": {"label": "AQ: ft12c384 (decay=0.995)", "color": "#E91E63"},
+    "at": {"label": "AT: ft6c384 (decay=0.999, epochs=200)", "color": "#E74C3C"},
+    "au": {"label": "AU: ft6c512 (decay=0.999, epochs=200)", "color": "#F39C12"},
+    "av": {"label": "AV: b6c96 (decay=0.999, epochs=200)", "color": "#27AE60"},
+    "aw": {"label": "AW: b10c128 (decay=0.999, epochs=200)", "color": "#2980B9"},
 }
 
 # Default color cycle for unknown variants
@@ -109,7 +108,6 @@ def discover_runs(runs_dir, variant_filter=None):
 MLX_BENCHMARK = {
     "ft6c384": {"fp32": 2.087, "int8": 1.558},
     "ft6c512": {"fp32": 3.521, "int8": 2.354},
-    "ft12c384": {"fp32": 5.583, "int8": 5.885},
     "b6c96": {"fp32": 1.548, "int8": 1.358},
     "b10c128": {"fp32": 1.976, "int8": 1.966},
 }
