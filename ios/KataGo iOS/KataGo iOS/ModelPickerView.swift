@@ -173,8 +173,10 @@ struct ModelPickerView: View {
             .navigationTitle("Select a Model")
         }
         .onOpenURL { url in
-            if let newGameRecord = GameRecord.createGameRecord(from: url) {
-                modelContext.insert(newGameRecord)
+            if let result = GameRecord.importGameRecord(from: url, in: modelContext) {
+                if result.isNew {
+                    modelContext.insert(result.gameRecord)
+                }
                 if let builtInModel = NeuralNetworkModel.allCases.first(
                     where: { $0.builtIn }
                 ) {

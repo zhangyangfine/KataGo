@@ -364,33 +364,61 @@ final class GameRecord {
         return gameRecord
     }
 
-    class func createGameRecord(from file: URL) -> GameRecord? {
+    /// Reads SGF string content and filename from a URL without creating a GameRecord.
+    class func readSgfContent(from file: URL) -> (sgf: String, name: String)? {
         guard file.startAccessingSecurityScopedResource() else { return nil }
-
-        // Get the name
         let name = file.deletingPathExtension().lastPathComponent
-
-        // Attempt to read the contents of the file into a string; exit if reading fails
-        guard let fileContents = try? String(contentsOf: file, encoding: .utf8) else { return nil }
-
-        // Release access
+        guard let fileContents = try? String(contentsOf: file, encoding: .utf8) else {
+            file.stopAccessingSecurityScopedResource()
+            return nil
+        }
         file.stopAccessingSecurityScopedResource()
+        return (sgf: fileContents, name: name)
+    }
 
-        // Initialize the SGF helper with the file contents
-        let sgfHelper = SgfHelper(sgf: fileContents)
+    /// Queries SwiftData for an existing GameRecord whose SGF matches exactly.
+    class func findExistingGameRecord(withSgf sgf: String, in modelContext: ModelContext) -> GameRecord? {
+        let descriptor = FetchDescriptor<GameRecord>(predicate: #Predicate<GameRecord> { $0.sgf == sgf })
+        return try? modelContext.fetch(descriptor).first
+    }
 
-        // Get the index of the last move in the SGF file; exit if the SGF is invalid
+    /// Reads an SGF file, checks for duplicates, and returns an existing or new GameRecord.
+    /// The caller must insert the record into the model context when `isNew` is true.
+    class func importGameRecord(from file: URL, in modelContext: ModelContext) -> (gameRecord: GameRecord, isNew: Bool)? {
+        guard let content = readSgfContent(from: file) else { return nil }
+
+        if let existing = findExistingGameRecord(withSgf: content.sgf, in: modelContext) {
+            return (gameRecord: existing, isNew: false)
+        }
+
+        // No duplicate — create new record
+        let sgfHelper = SgfHelper(sgf: content.sgf)
         guard let moveSize = sgfHelper.moveSize else { return nil }
 
-        // Create a dictionary of comments for each move by filtering and mapping non-empty comments
         let comments = (0...moveSize)
             .compactMap { index in sgfHelper.getComment(at: index).flatMap { !$0.isEmpty ? (index, $0) : nil } }
             .reduce(into: [:]) { $0[$1.0] = $1.1 }
 
-        // Create a new game record with the SGF content, the current move index, the name, and the comments
-        return GameRecord.createGameRecord(sgf: fileContents,
+        let newRecord = GameRecord.createGameRecord(sgf: content.sgf,
+                                                    currentIndex: moveSize,
+                                                    name: content.name,
+                                                    comments: comments)
+        return (gameRecord: newRecord, isNew: true)
+    }
+
+    class func createGameRecord(from file: URL) -> GameRecord? {
+        guard let content = readSgfContent(from: file) else { return nil }
+
+        let sgfHelper = SgfHelper(sgf: content.sgf)
+        guard let moveSize = sgfHelper.moveSize else { return nil }
+
+        let comments = (0...moveSize)
+            .compactMap { index in sgfHelper.getComment(at: index).flatMap { !$0.isEmpty ? (index, $0) : nil } }
+            .reduce(into: [:]) { $0[$1.0] = $1.1 }
+
+        return GameRecord.createGameRecord(sgf: content.sgf,
                                            currentIndex: moveSize,
-                                           name: name,
+                                           name: content.name,
                                            comments: comments)
     }
 

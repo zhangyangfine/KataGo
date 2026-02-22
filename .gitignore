@@ -74,6 +74,7 @@ GTAGS
 # For Xcode
 xcuserdata/
 DerivedData/
+*.xcresult
 
 # For KataGo-iOS
 ios/KataGo\ iOS/Resources/*.bin.gz

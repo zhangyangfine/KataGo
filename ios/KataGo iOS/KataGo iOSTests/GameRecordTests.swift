@@ -6,9 +6,49 @@
 //
 
 import Testing
+import SwiftData
 @testable import KataGo_Anytime
 
 struct GameRecordTests {
+
+    /// Creates an in-memory ModelContainer for testing SwiftData queries.
+    private static func makeInMemoryContainer() throws -> ModelContainer {
+        let schema = Schema([GameRecord.self, Config.self])
+        let config = ModelConfiguration(isStoredInMemoryOnly: true)
+        return try ModelContainer(for: schema, configurations: [config])
+    }
+
+    @Test func findExistingGameRecord_noMatch() async throws {
+        let container = try GameRecordTests.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let result = GameRecord.findExistingGameRecord(withSgf: "(;FF[4]GM[1]SZ[9])", in: context)
+        #expect(result == nil)
+    }
+
+    @Test func findExistingGameRecord_matchingSgf() async throws {
+        let container = try GameRecordTests.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let sgf = "(;FF[4]GM[1]SZ[9])"
+        let record = GameRecord.createGameRecord(sgf: sgf, name: "Test")
+        context.insert(record)
+        try context.save()
+
+        let found = GameRecord.findExistingGameRecord(withSgf: sgf, in: context)
+        #expect(found != nil)
+        #expect(found?.sgf == sgf)
+        #expect(found?.name == "Test")
+    }
+
+    @Test func findExistingGameRecord_differentSgf() async throws {
+        let container = try GameRecordTests.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let record = GameRecord.createGameRecord(sgf: "(;FF[4]GM[1]SZ[9])", name: "Test")
+        context.insert(record)
+        try context.save()
+
+        let found = GameRecord.findExistingGameRecord(withSgf: "(;FF[4]GM[1]SZ[19])", in: context)
+        #expect(found == nil)
+    }
 
     @Test func undoGameRecord() async throws {
         let gameRecord = GameRecord.createGameRecord(currentIndex: 1)

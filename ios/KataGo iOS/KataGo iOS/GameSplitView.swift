@@ -315,27 +315,24 @@ struct GameSplitView: View {
 
     // Handles file import from the document picker
     private func importFiles(result: Result<[URL], any Error>) {
-        // Ensure the result is a successful file URL and start accessing its security-scoped resource
         guard case .success(let files) = result else { return }
 
         files.forEach { file in
-            if let newGameRecord = GameRecord.createGameRecord(from: file) {
-                // Insert the new game record into the model context
-                modelContext.insert(newGameRecord)
-
-                // Update the selected game record in the navigation context
-                navigationContext.selectedGameRecord = newGameRecord
+            if let result = GameRecord.importGameRecord(from: file, in: modelContext) {
+                if result.isNew {
+                    modelContext.insert(result.gameRecord)
+                }
+                navigationContext.selectedGameRecord = result.gameRecord
             }
         }
     }
 
     private func importUrl(url: URL) {
-        if let newGameRecord = GameRecord.createGameRecord(from: url) {
-            // Insert the new game record into the model context
-            modelContext.insert(newGameRecord)
-
-            // Update the selected game record in the navigation context
-            navigationContext.selectedGameRecord = newGameRecord
+        if let result = GameRecord.importGameRecord(from: url, in: modelContext) {
+            if result.isNew {
+                modelContext.insert(result.gameRecord)
+            }
+            navigationContext.selectedGameRecord = result.gameRecord
         }
     }
 
