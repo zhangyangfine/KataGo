@@ -8,21 +8,24 @@ This is a fork of KataGo (a strong open-source Go AI engine) with an iOS/macOS S
 
 ## Build Commands
 
-### iOS/macOS App (Xcode)
+### Building for All Platforms
+The app must build for all three supported platforms: iOS, macOS, and visionOS.
 ```bash
-# Navigate to iOS project
 cd ios/KataGo\ iOS
 
-# Open in Xcode
-open KataGo\ Anytime.xcodeproj
+# Build for iOS Simulator
+xcodebuild build -project "KataGo Anytime.xcodeproj" -scheme "KataGo Anytime" -destination 'platform=iOS Simulator,name=iPhone 17' -configuration Debug
 
-# Build from command line
-xcodebuild -project "KataGo Anytime.xcodeproj" -scheme "KataGo Anytime" -configuration Debug build
+# Build for macOS
+xcodebuild build -project "KataGo Anytime.xcodeproj" -scheme "KataGo Anytime" -destination 'platform=macOS' -configuration Debug
+
+# Build for visionOS Simulator
+xcodebuild build -project "KataGo Anytime.xcodeproj" -scheme "KataGo Anytime" -destination 'platform=visionOS Simulator,name=Apple Vision Pro' -configuration Debug
 ```
 
 ### Running Tests
+Tests only run on iOS Simulator (the test target does not support macOS or visionOS).
 ```bash
-# Run unit tests from Xcode or command line
 xcodebuild test -project "ios/KataGo iOS/KataGo Anytime.xcodeproj" -scheme "KataGo Anytime" -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
 
