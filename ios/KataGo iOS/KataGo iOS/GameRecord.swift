@@ -406,22 +406,6 @@ final class GameRecord {
         return (gameRecord: newRecord, isNew: true)
     }
 
-    class func createGameRecord(from file: URL) -> GameRecord? {
-        guard let content = readSgfContent(from: file) else { return nil }
-
-        let sgfHelper = SgfHelper(sgf: content.sgf)
-        guard let moveSize = sgfHelper.moveSize else { return nil }
-
-        let comments = (0...moveSize)
-            .compactMap { index in sgfHelper.getComment(at: index).flatMap { !$0.isEmpty ? (index, $0) : nil } }
-            .reduce(into: [:]) { $0[$1.0] = $1.1 }
-
-        return GameRecord.createGameRecord(sgf: content.sgf,
-                                           currentIndex: moveSize,
-                                           name: content.name,
-                                           comments: comments)
-    }
-
     var image: Image? {
 #if os(macOS)
         if let thumbnail,
