@@ -1910,7 +1910,7 @@
 				GCC_WARN_UNUSED_VARIABLE = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = (
-					"../../cpp/external/tclap-1.2.2/include",
+					"../../cpp/external/tclap-1.2.5/include",
 					../../cpp/external,
 				);
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -1968,7 +1968,7 @@
 				GCC_WARN_UNUSED_VARIABLE = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = (
-					"../../cpp/external/tclap-1.2.2/include",
+					"../../cpp/external/tclap-1.2.5/include",
 					../../cpp/external,
 				);
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -2260,7 +2260,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = (
-					"../../cpp/external/tclap-1.2.2/include",
+					"../../cpp/external/tclap-1.2.5/include",
 					../../cpp/external,
 				);
 				INFOPLIST_FILE = "KataGo-iOS-Info.plist";
@@ -2309,7 +2309,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = (
-					"../../cpp/external/tclap-1.2.2/include",
+					"../../cpp/external/tclap-1.2.5/include",
 					../../cpp/external,
 				);
 				INFOPLIST_FILE = "KataGo-iOS-Info.plist";

@@ -60,7 +60,7 @@ PlayerCpp MoveCpp::getPlayer() const {
 
 SgfCpp::SgfCpp(const string& str) : sgf(nullptr), _xSize(0), _ySize(0) {
     try {
-        sgf = Sgf::parse(str);
+        sgf = Sgf::parse(str).release();
         if (sgf != NULL) {
             auto size = ((Sgf*)sgf)->getXYSize();
             _xSize = size.x;
@@ -85,7 +85,7 @@ static const int COORD_MAX = 128;
 void SgfCpp::traverseSgfHelper(const void* sgf) {
     // Iterate over the nodes in this sgf
     for (size_t i = 0; i < ((Sgf*)sgf)->nodes.size(); ++i) {
-        const SgfNode* node = ((Sgf*)sgf)->nodes[i];
+        const SgfNode* node = ((Sgf*)sgf)->nodes[i].get();
 
         // Extract move if present
         if (node->move.pla != C_EMPTY) {
@@ -118,7 +118,7 @@ void SgfCpp::traverseSgfHelper(const void* sgf) {
         int64_t childDepth = child->depth();
         if (childDepth > maxDepth) {
             maxDepth = childDepth;
-            maxChild = child;
+            maxChild = child.get();
         }
     }
 
