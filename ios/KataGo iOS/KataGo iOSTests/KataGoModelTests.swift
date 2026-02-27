@@ -601,6 +601,47 @@ struct KataGoModelTests {
         #expect(gobanState.requestingClearAnalysis == true)
     }
 
+    // MARK: - GobanState resetPendingStatesOnError Tests
+
+    @Test func testResetPendingStatesOnError() async throws {
+        let gobanState = GobanState()
+        let stones = Stones()
+
+        // Set all pending states
+        gobanState.pendingMoveTurn = "b"
+        gobanState.pendingMoveVertex = "D4"
+        gobanState.confirmingIllegalMove = true
+        gobanState.illegalMoveReason = "Illegal ko recapture"
+        gobanState.waitingForAnalysis = true
+        gobanState.showBoardCount = 2
+        stones.isReady = false
+
+        gobanState.resetPendingStatesOnError(stones: stones)
+
+        #expect(gobanState.pendingMoveTurn == nil)
+        #expect(gobanState.pendingMoveVertex == nil)
+        #expect(gobanState.confirmingIllegalMove == false)
+        #expect(gobanState.illegalMoveReason == nil)
+        #expect(gobanState.waitingForAnalysis == false)
+        #expect(gobanState.showBoardCount == 0)
+        #expect(stones.isReady == true)
+    }
+
+    @Test func testResetPendingStatesOnErrorWhenAlreadyClean() async throws {
+        let gobanState = GobanState()
+        let stones = Stones()
+
+        gobanState.resetPendingStatesOnError(stones: stones)
+
+        #expect(gobanState.pendingMoveTurn == nil)
+        #expect(gobanState.pendingMoveVertex == nil)
+        #expect(gobanState.confirmingIllegalMove == false)
+        #expect(gobanState.illegalMoveReason == nil)
+        #expect(gobanState.waitingForAnalysis == false)
+        #expect(gobanState.showBoardCount == 0)
+        #expect(stones.isReady == true)
+    }
+
     // MARK: - Tests for Coordinate Struct Initialization
 
     @Test func testCoordinateInvalidInitialization() async throws {

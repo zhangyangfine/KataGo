@@ -117,6 +117,11 @@ struct ContentView: View {
             // Append the message to the list of messages
             messageList.messages.append(message)
 
+            // Handle GTP error responses by resetting all pending states
+            if line.hasPrefix("? ") {
+                gobanState.resetPendingStatesOnError(stones: stones)
+            }
+
             // Collect board information
             await maybeCollectBoard(message: line)
 

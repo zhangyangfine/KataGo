@@ -248,6 +248,13 @@ class GobanState {
         illegalMoveReason = nil
     }
 
+    func resetPendingStatesOnError(stones: Stones) {
+        clearPendingMove()
+        waitingForAnalysis = false
+        showBoardCount = 0
+        stones.isReady = true
+    }
+
     func playPendingHumanMove(
         gameRecord: GameRecord,
         analysis: Analysis,
