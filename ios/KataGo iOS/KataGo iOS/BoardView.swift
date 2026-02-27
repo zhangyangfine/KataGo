@@ -62,7 +62,7 @@ struct BoardView: View {
                     commentIsFocused = false
                     gestureLocation = location
 
-                    if stones.isReady && !gobanState.isAutoPlaying,
+                    if stones.isReady && !gobanState.isAutoPlaying && gobanState.pendingMoveTurn == nil,
                        let coordinate = locationToCoordinate(location: location, dimensions: dimensions),
                        let point = coordinate.point,
                        let move = coordinate.move,
@@ -73,11 +73,10 @@ struct BoardView: View {
                         if gobanState.isOverwriting(gameRecord: gameRecord) {
                             confirmingOverwrite = true
                         } else {
-                            processGesureLocation(
-                                location: location,
-                                dimensions: dimensions,
+                            gobanState.sendCheckMoveCommand(
                                 turn: turn,
-                                move: move
+                                move: move,
+                                messageList: messageList
                             )
                         }
                     }
@@ -92,11 +91,10 @@ struct BoardView: View {
                            let coordinate = locationToCoordinate(location: gestureLocation, dimensions: dimensions),
                            let move = coordinate.move,
                            let turn = player.nextColorSymbolForPlayCommand {
-                            processGesureLocation(
-                                location: gestureLocation,
-                                dimensions: dimensions,
+                            gobanState.sendCheckMoveCommand(
                                 turn: turn,
-                                move: move
+                                move: move,
+                                messageList: messageList
                             )
                         }
                     }
@@ -167,39 +165,6 @@ struct BoardView: View {
                               y: dimensions.boardLineStartY + y * dimensions.squareLength)
             }
         }
-    }
-
-    func processGesureLocation(
-        location: CGPoint,
-        dimensions: Dimensions,
-        turn: String,
-        move: String
-    ) {
-        if gobanState.isEditing {
-            gameRecord.clearData(after: gameRecord.currentIndex)
-
-            gobanState.maybeUpdateAnalysisData(
-                gameRecord: gameRecord,
-                analysis: analysis,
-                board: board,
-                stones: stones
-            )
-        } else if !gobanState.isBranchActive {
-            gobanState.branchSgf = gameRecord.sgf
-            gobanState.branchIndex = gameRecord.currentIndex
-        }
-
-        gobanState.play(
-            turn: turn,
-            move: move,
-            messageList: messageList,
-            stones: stones
-        )
-
-        player.toggleNextColorForPlayCommand()
-        gobanState.sendShowBoardCommand(messageList: messageList)
-        messageList.appendAndSend(command: "printsgf")
-        audioModel.playPlaySound(soundEffect: gobanState.soundEffect)
     }
 
     func locationToCoordinate(location: CGPoint, dimensions: Dimensions) -> Coordinate? {

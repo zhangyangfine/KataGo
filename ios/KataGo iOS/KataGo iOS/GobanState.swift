@@ -23,6 +23,10 @@ class GobanState {
     var branchSgf: String = .inActiveSgf
     var branchIndex: Int = .inActiveCurrentIndex
     var confirmingAIOverwrite: Bool = false
+    var pendingMoveTurn: String? = nil
+    var pendingMoveVertex: String? = nil
+    var confirmingIllegalMove: Bool = false
+    var illegalMoveReason: String? = nil
     var soundEffect: Bool = false
     var hapticFeedback: Bool = false
 
@@ -229,6 +233,54 @@ class GobanState {
                 messageList.appendAndSend(commands: humanSLModel.commands)
             }
         }
+    }
+
+    func sendCheckMoveCommand(turn: String, move: String, messageList: MessageList) {
+        pendingMoveTurn = turn
+        pendingMoveVertex = move
+        messageList.appendAndSend(command: "kata-check-move \(turn) \(move)")
+    }
+
+    func clearPendingMove() {
+        pendingMoveTurn = nil
+        pendingMoveVertex = nil
+        confirmingIllegalMove = false
+        illegalMoveReason = nil
+    }
+
+    func playPendingHumanMove(
+        gameRecord: GameRecord,
+        analysis: Analysis,
+        board: BoardSize,
+        stones: Stones,
+        messageList: MessageList,
+        player: Turn,
+        audioModel: AudioModel
+    ) {
+        guard let turn = pendingMoveTurn,
+              let move = pendingMoveVertex else { return }
+
+        if isEditing {
+            gameRecord.clearData(after: gameRecord.currentIndex)
+
+            maybeUpdateAnalysisData(
+                gameRecord: gameRecord,
+                analysis: analysis,
+                board: board,
+                stones: stones
+            )
+        } else if !isBranchActive {
+            branchSgf = gameRecord.sgf
+            branchIndex = gameRecord.currentIndex
+        }
+
+        play(turn: turn, move: move, messageList: messageList, stones: stones)
+        player.toggleNextColorForPlayCommand()
+        sendShowBoardCommand(messageList: messageList)
+        messageList.appendAndSend(command: "printsgf")
+        audioModel.playPlaySound(soundEffect: soundEffect)
+
+        clearPendingMove()
     }
 
     func play(turn: String, move: String, messageList: MessageList, stones: Stones) {

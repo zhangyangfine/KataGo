@@ -129,6 +129,9 @@ struct ContentView: View {
             // Collect play information
             maybeCollectPlay(message: line)
 
+            // Collect check-move response
+            maybeCollectCheckMove(message: line)
+
             // Remove when there are too many messages
             messageList.shrink()
         }
@@ -541,6 +544,39 @@ struct ContentView: View {
         let playPrefix = "play "
         if message.hasPrefix(playPrefix) {
             postProcessAIMove(message: message)
+        }
+    }
+
+    func maybeCollectCheckMove(message: String) {
+        guard gobanState.pendingMoveTurn != nil else { return }
+        guard message.hasPrefix("= {") else { return }
+
+        let jsonString = String(message.dropFirst(2))
+        guard let data = jsonString.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let isLegal = json["isLegal"] as? Bool else {
+            gobanState.clearPendingMove()
+            return
+        }
+
+        if isLegal {
+            if let gameRecord = navigationContext.selectedGameRecord {
+                gobanState.playPendingHumanMove(
+                    gameRecord: gameRecord,
+                    analysis: analysis,
+                    board: board,
+                    stones: stones,
+                    messageList: messageList,
+                    player: player,
+                    audioModel: audioModel
+                )
+            } else {
+                gobanState.clearPendingMove()
+            }
+        } else {
+            let reason = json["reason"] as? String
+            gobanState.illegalMoveReason = reason
+            gobanState.confirmingIllegalMove = true
         }
     }
 }

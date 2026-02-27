@@ -86,6 +86,31 @@ struct GameSplitView: View {
                     gobanState.analysisStatus = .clear
                 }
             }
+            .confirmationDialog(
+                illegalMoveReasonText,
+                isPresented: $gobanState.confirmingIllegalMove,
+                titleVisibility: .visible
+            ) {
+                Button("Play Anyway", role: .destructive) {
+                    if let gameRecord = navigationContext.selectedGameRecord {
+                        gobanState.playPendingHumanMove(
+                            gameRecord: gameRecord,
+                            analysis: analysis,
+                            board: board,
+                            stones: stones,
+                            messageList: messageList,
+                            player: player,
+                            audioModel: audioModel
+                        )
+                    } else {
+                        gobanState.clearPendingMove()
+                    }
+                }
+
+                Button("Cancel", role: .cancel) {
+                    gobanState.clearPendingMove()
+                }
+            }
         }
         .onAppear {
             gobanState.soundEffect = globalSoundEffect
@@ -161,6 +186,15 @@ struct GameSplitView: View {
             allowsMultipleSelection: true
         ) { result in
             importFiles(result: result)
+        }
+    }
+
+    private var illegalMoveReasonText: String {
+        switch gobanState.illegalMoveReason {
+        case "ko": return "This move violates the ko rule."
+        case "suicide": return "This move is a suicide (self-capture)."
+        case "superko": return "This move violates the superko rule."
+        default: return "This move is illegal."
         }
     }
 
@@ -339,6 +373,7 @@ struct GameSplitView: View {
     private func processChange(oldGameRecord: GameRecord?, newGameRecord: GameRecord?) {
         player.nextColorForPlayCommand = .unknown
         gobanState.deactivateBranch()
+        gobanState.clearPendingMove()
 
         if let newGameRecord {
             newGameRecord.updateToLatestVersion()
