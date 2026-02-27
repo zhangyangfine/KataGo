@@ -7,6 +7,7 @@
 
 import Testing
 import CoreGraphics
+import Foundation
 @testable import KataGo_Anytime
 
 struct KataGoModelTests {
@@ -640,6 +641,38 @@ struct KataGoModelTests {
         #expect(gobanState.waitingForAnalysis == false)
         #expect(gobanState.showBoardCount == 0)
         #expect(stones.isReady == true)
+    }
+
+    // MARK: - GobanState isPendingMoveStale Tests
+
+    @Test func testIsPendingMoveStaleWhenNoPendingMove() async throws {
+        let gobanState = GobanState()
+        #expect(gobanState.isPendingMoveStale == false)
+    }
+
+    @Test func testIsPendingMoveStaleImmediatelyAfterSend() async throws {
+        let gobanState = GobanState()
+        let messageList = MessageList()
+        gobanState.sendCheckMoveCommand(turn: "b", move: "D4", messageList: messageList)
+        #expect(gobanState.isPendingMoveStale == false)
+    }
+
+    @Test func testIsPendingMoveStaleAfterTimeout() async throws {
+        let gobanState = GobanState()
+        let messageList = MessageList()
+        gobanState.sendCheckMoveCommand(turn: "b", move: "D4", messageList: messageList)
+        // Artificially set timestamp to 6 seconds ago
+        gobanState.pendingMoveTimestamp = Date().addingTimeInterval(-6.0)
+        #expect(gobanState.isPendingMoveStale == true)
+    }
+
+    @Test func testIsPendingMoveStaleAfterClear() async throws {
+        let gobanState = GobanState()
+        let messageList = MessageList()
+        gobanState.sendCheckMoveCommand(turn: "b", move: "D4", messageList: messageList)
+        gobanState.clearPendingMove()
+        #expect(gobanState.isPendingMoveStale == false)
+        #expect(gobanState.pendingMoveTimestamp == nil)
     }
 
     // MARK: - Tests for Coordinate Struct Initialization

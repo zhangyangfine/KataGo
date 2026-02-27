@@ -62,13 +62,17 @@ struct BoardView: View {
                     commentIsFocused = false
                     gestureLocation = location
 
-                    if stones.isReady && !gobanState.isAutoPlaying && gobanState.pendingMoveTurn == nil,
+                    if stones.isReady && !gobanState.isAutoPlaying && (gobanState.pendingMoveTurn == nil || gobanState.isPendingMoveStale),
                        let coordinate = locationToCoordinate(location: location, dimensions: dimensions),
                        let point = coordinate.point,
                        let move = coordinate.move,
                        let turn = player.nextColorSymbolForPlayCommand,
                        !stones.blackPoints.contains(point) && !stones.whitePoints.contains(point),
                        !gobanState.shouldGenMove(config: config, player: player) {
+
+                        if gobanState.isPendingMoveStale {
+                            gobanState.clearPendingMove()
+                        }
 
                         if gobanState.isOverwriting(gameRecord: gameRecord) {
                             confirmingOverwrite = true
@@ -87,6 +91,10 @@ struct BoardView: View {
                     titleVisibility: .visible
                 ) {
                     Button("Overwite", role: .destructive) {
+                        if gobanState.isPendingMoveStale {
+                            gobanState.clearPendingMove()
+                        }
+
                         if let gestureLocation,
                            let coordinate = locationToCoordinate(location: gestureLocation, dimensions: dimensions),
                            let move = coordinate.move,

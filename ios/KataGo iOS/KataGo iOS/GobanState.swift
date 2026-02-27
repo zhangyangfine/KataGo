@@ -27,6 +27,7 @@ class GobanState {
     var pendingMoveVertex: String? = nil
     var confirmingIllegalMove: Bool = false
     var illegalMoveReason: String? = nil
+    var pendingMoveTimestamp: Date? = nil
     var soundEffect: Bool = false
     var hapticFeedback: Bool = false
 
@@ -238,14 +239,23 @@ class GobanState {
     func sendCheckMoveCommand(turn: String, move: String, messageList: MessageList) {
         pendingMoveTurn = turn
         pendingMoveVertex = move
+        pendingMoveTimestamp = Date()
         messageList.appendAndSend(command: "kata-check-move \(turn) \(move)")
     }
 
     func clearPendingMove() {
         pendingMoveTurn = nil
         pendingMoveVertex = nil
+        pendingMoveTimestamp = nil
         confirmingIllegalMove = false
         illegalMoveReason = nil
+    }
+
+    var isPendingMoveStale: Bool {
+        guard pendingMoveTurn != nil, let timestamp = pendingMoveTimestamp else {
+            return false
+        }
+        return Date().timeIntervalSince(timestamp) > 5.0
     }
 
     func resetPendingStatesOnError(stones: Stones) {
