@@ -558,10 +558,13 @@ struct ContentView: View {
 
         let jsonString = String(message.dropFirst(2))
         guard let data = jsonString.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let isLegal = json["isLegal"] as? Bool else {
-            gobanState.clearPendingMove()
-            return
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return  // Malformed JSON — not our response
+        }
+
+        // Only consume responses with "isLegal" key (unique to kata-check-move)
+        guard let isLegal = json["isLegal"] as? Bool else {
+            return  // Different JSON command response — leave pending state intact
         }
 
         if isLegal {

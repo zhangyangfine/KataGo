@@ -11,7 +11,7 @@ namespace PlayUtils {
   //Check whether a move is legal and return the reason if not.
   struct CheckMoveResult {
     bool isLegal;
-    std::string reason; // empty if legal; values: "occupied", "out_of_bounds", "wrong_turn", "ko", "suicide", "superko"
+    std::string reason; // empty if legal; values: "out_of_bounds", "occupied", "ko", "suicide", "superko", "wrong_turn"
   };
   CheckMoveResult checkMoveLegality(const Board& board, const BoardHistory& hist, Loc loc, Player pla);
 

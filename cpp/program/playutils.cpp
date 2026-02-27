@@ -1272,10 +1272,6 @@ PlayUtils::CheckMoveResult PlayUtils::checkMoveLegality(const Board& board, cons
     result.isLegal = false;
     result.reason = "occupied";
   }
-  else if(pla != hist.presumedNextMovePla) {
-    result.isLegal = false;
-    result.reason = "wrong_turn";
-  }
   else if(board.isKoBanned(loc)) {
     result.isLegal = false;
     result.reason = "ko";
@@ -1287,6 +1283,10 @@ PlayUtils::CheckMoveResult PlayUtils::checkMoveLegality(const Board& board, cons
   else if(hist.superKoBanned[loc]) {
     result.isLegal = false;
     result.reason = "superko";
+  }
+  else if(pla != hist.presumedNextMovePla) {
+    result.isLegal = false;
+    result.reason = "wrong_turn";
   }
 
   return result;
