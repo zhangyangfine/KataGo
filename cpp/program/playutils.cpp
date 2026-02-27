@@ -1256,3 +1256,38 @@ std::shared_ptr<NNOutput> PlayUtils::getFullSymmetryNNOutput(
   std::shared_ptr<NNOutput> result(new NNOutput(ptrs));
   return result;
 }
+
+PlayUtils::CheckMoveResult PlayUtils::checkMoveLegality(const Board& board, const BoardHistory& hist, Loc loc, Player pla) {
+  CheckMoveResult result;
+  result.isLegal = true;
+
+  if(loc == Board::PASS_LOC) {
+    // Pass is always legal
+  }
+  else if(!board.isOnBoard(loc)) {
+    result.isLegal = false;
+    result.reason = "out_of_bounds";
+  }
+  else if(board.colors[loc] != C_EMPTY) {
+    result.isLegal = false;
+    result.reason = "occupied";
+  }
+  else if(pla != hist.presumedNextMovePla) {
+    result.isLegal = false;
+    result.reason = "wrong_turn";
+  }
+  else if(board.isKoBanned(loc)) {
+    result.isLegal = false;
+    result.reason = "ko";
+  }
+  else if(board.isIllegalSuicide(loc, pla, hist.rules.multiStoneSuicideLegal)) {
+    result.isLegal = false;
+    result.reason = "suicide";
+  }
+  else if(hist.superKoBanned[loc]) {
+    result.isLegal = false;
+    result.reason = "superko";
+  }
+
+  return result;
+}

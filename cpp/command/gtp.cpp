@@ -2520,46 +2520,15 @@ int MainCmds::gtp(const vector<string>& args) {
         else {
           const Board& board = engine->bot->getRootBoard();
           const BoardHistory& hist = engine->bot->getRootHist();
-          const Rules& rules = hist.rules;
 
           nlohmann::json result;
           result["vertex"] = (loc == Board::PASS_LOC) ? "pass" : Location::toString(loc, board);
           result["color"] = PlayerIO::playerToStringShort(pla);
 
-          bool isLegal = true;
-          string reason;
-
-          if(loc == Board::PASS_LOC) {
-            isLegal = true;
-          }
-          else if(!board.isOnBoard(loc)) {
-            isLegal = false;
-            reason = "out_of_bounds";
-          }
-          else if(board.colors[loc] != C_EMPTY) {
-            isLegal = false;
-            reason = "occupied";
-          }
-          else if(pla != hist.presumedNextMovePla) {
-            isLegal = false;
-            reason = "wrong_turn";
-          }
-          else if(board.isKoBanned(loc)) {
-            isLegal = false;
-            reason = "ko";
-          }
-          else if(board.isIllegalSuicide(loc, pla, rules.multiStoneSuicideLegal)) {
-            isLegal = false;
-            reason = "suicide";
-          }
-          else if(hist.superKoBanned[loc]) {
-            isLegal = false;
-            reason = "superko";
-          }
-
-          result["isLegal"] = isLegal;
-          if(!isLegal) {
-            result["reason"] = reason;
+          PlayUtils::CheckMoveResult checkResult = PlayUtils::checkMoveLegality(board, hist, loc, pla);
+          result["isLegal"] = checkResult.isLegal;
+          if(!checkResult.isLegal) {
+            result["reason"] = checkResult.reason;
           }
 
           response = result.dump();

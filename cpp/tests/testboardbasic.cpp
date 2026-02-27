@@ -2528,48 +2528,15 @@ void Tests::runCheckMoveTests() {
   ostringstream out;
 
   //============================================================================
-  // Helper to simulate kata-check-move logic (mirrors GTP handler exactly)
+  // Helper to format a CheckMoveResult as JSON (mirrors GTP handler output)
   //============================================================================
-  auto checkMove = [](const Board& board, const BoardHistory& hist, Loc loc, Player pla) -> string {
+  auto toJson = [](const Board& board, const PlayUtils::CheckMoveResult& r, Loc loc, Player pla) -> string {
     nlohmann::json result;
     result["vertex"] = (loc == Board::PASS_LOC) ? "pass" : Location::toString(loc, board);
     result["color"] = PlayerIO::playerToStringShort(pla);
-
-    bool isLegal = true;
-    string reason;
-
-    if(loc == Board::PASS_LOC) {
-      isLegal = true;  // Branch: pass always legal
-    }
-    else if(!board.isOnBoard(loc)) {
-      isLegal = false;
-      reason = "out_of_bounds";  // Branch: out_of_bounds
-    }
-    else if(board.colors[loc] != C_EMPTY) {
-      isLegal = false;
-      reason = "occupied";  // Branch: occupied
-    }
-    else if(pla != hist.presumedNextMovePla) {
-      isLegal = false;
-      reason = "wrong_turn";  // Branch: wrong_turn
-    }
-    else if(board.isKoBanned(loc)) {
-      isLegal = false;
-      reason = "ko";  // Branch: ko
-    }
-    else if(board.isIllegalSuicide(loc, pla, hist.rules.multiStoneSuicideLegal)) {
-      isLegal = false;
-      reason = "suicide";  // Branch: suicide
-    }
-    else if(hist.superKoBanned[loc]) {
-      isLegal = false;
-      reason = "superko";  // Branch: superko
-    }
-    // else: legal move (Branch: legal)
-
-    result["isLegal"] = isLegal;
-    if(!isLegal) {
-      result["reason"] = reason;
+    result["isLegal"] = r.isLegal;
+    if(!r.isLegal) {
+      result["reason"] = r.reason;
     }
     return result.dump();
   };
@@ -2593,11 +2560,11 @@ void Tests::runCheckMoveTests() {
     BoardHistory hist(board,P_BLACK,rules,0);
     Loc loc = Location::getLoc(4,4,board.x_size);
 
-    string result = checkMove(board, hist, loc, P_BLACK);
-    out << "Legal move: " << result << endl;
+    PlayUtils::CheckMoveResult r = PlayUtils::checkMoveLegality(board, hist, loc, P_BLACK);
+    out << "Legal move: " << toJson(board, r, loc, P_BLACK) << endl;
 
-    testAssert(result.find("\"isLegal\":true") != string::npos);
-    testAssert(result.find("\"reason\"") == string::npos);
+    testAssert(r.isLegal);
+    testAssert(r.reason.empty());
   }
 
   //============================================================================
@@ -2618,11 +2585,10 @@ void Tests::runCheckMoveTests() {
     Rules rules = Rules::getTrompTaylorish();
     BoardHistory hist(board,P_BLACK,rules,0);
 
-    string result = checkMove(board, hist, Board::PASS_LOC, P_BLACK);
-    out << "Pass move: " << result << endl;
+    PlayUtils::CheckMoveResult r = PlayUtils::checkMoveLegality(board, hist, Board::PASS_LOC, P_BLACK);
+    out << "Pass move: " << toJson(board, r, Board::PASS_LOC, P_BLACK) << endl;
 
-    testAssert(result.find("\"isLegal\":true") != string::npos);
-    testAssert(result.find("\"vertex\":\"pass\"") != string::npos);
+    testAssert(r.isLegal);
   }
 
   //============================================================================
@@ -2644,11 +2610,11 @@ void Tests::runCheckMoveTests() {
     BoardHistory hist(board,P_BLACK,rules,0);
     Loc loc = Location::getLoc(4,4,board.x_size);  // E5 is occupied
 
-    string result = checkMove(board, hist, loc, P_BLACK);
-    out << "Occupied: " << result << endl;
+    PlayUtils::CheckMoveResult r = PlayUtils::checkMoveLegality(board, hist, loc, P_BLACK);
+    out << "Occupied: " << toJson(board, r, loc, P_BLACK) << endl;
 
-    testAssert(result.find("\"isLegal\":false") != string::npos);
-    testAssert(result.find("\"reason\":\"occupied\"") != string::npos);
+    testAssert(!r.isLegal);
+    testAssert(r.reason == "occupied");
   }
 
   //============================================================================
@@ -2670,11 +2636,11 @@ void Tests::runCheckMoveTests() {
     BoardHistory hist(board,P_BLACK,rules,0);  // Black's turn
     Loc loc = Location::getLoc(4,4,board.x_size);
 
-    string result = checkMove(board, hist, loc, P_WHITE);  // White tries to play
-    out << "Wrong turn: " << result << endl;
+    PlayUtils::CheckMoveResult r = PlayUtils::checkMoveLegality(board, hist, loc, P_WHITE);  // White tries to play
+    out << "Wrong turn: " << toJson(board, r, loc, P_WHITE) << endl;
 
-    testAssert(result.find("\"isLegal\":false") != string::npos);
-    testAssert(result.find("\"reason\":\"wrong_turn\"") != string::npos);
+    testAssert(!r.isLegal);
+    testAssert(r.reason == "wrong_turn");
   }
 
   //============================================================================
@@ -2709,11 +2675,11 @@ x....
     Loc koLoc = Location::getLoc(0,0,board.x_size);  // A5
     testAssert(board.isKoBanned(koLoc));
 
-    string result = checkMove(board, hist, koLoc, P_BLACK);
-    out << "Ko: " << result << endl;
+    PlayUtils::CheckMoveResult r = PlayUtils::checkMoveLegality(board, hist, koLoc, P_BLACK);
+    out << "Ko: " << toJson(board, r, koLoc, P_BLACK) << endl;
 
-    testAssert(result.find("\"isLegal\":false") != string::npos);
-    testAssert(result.find("\"reason\":\"ko\"") != string::npos);
+    testAssert(!r.isLegal);
+    testAssert(r.reason == "ko");
   }
 
   //============================================================================
@@ -2741,42 +2707,56 @@ x....
     testAssert(board.colors[suicideLoc] == C_EMPTY);  // Verify it's empty
     testAssert(board.isIllegalSuicide(suicideLoc, P_WHITE, false));  // Verify it's suicide
 
-    string result = checkMove(board, hist, suicideLoc, P_WHITE);
-    out << "Suicide: " << result << endl;
+    PlayUtils::CheckMoveResult r = PlayUtils::checkMoveLegality(board, hist, suicideLoc, P_WHITE);
+    out << "Suicide: " << toJson(board, r, suicideLoc, P_WHITE) << endl;
 
-    testAssert(result.find("\"isLegal\":false") != string::npos);
-    testAssert(result.find("\"reason\":\"suicide\"") != string::npos);
+    testAssert(!r.isLegal);
+    testAssert(r.reason == "suicide");
   }
 
   //============================================================================
-  // Test 7: Superko (covers SUPERKO branch)
+  // Test 7: Superko via real triple-ko position (covers SUPERKO branch)
   //============================================================================
   {
-    // For reliable coverage, directly test the superKoBanned check
-    Board board = Board::parseBoard(7,7,R"%%(
-.......
-.......
-.......
-.......
-.......
-.......
+    // Triple ko position: after a sequence of captures, positional superko
+    // bans White from recapturing at (5,2).
+    Board board = Board::parseBoard(7,6,R"%%(
+ooooooo
+oxo.o.o
+x.xoxox
+xxxxxxx
+ooooooo
 .......
 )%%");
-    Rules rules = Rules::getTrompTaylorish();
-    rules.koRule = Rules::KO_POSITIONAL;  // Enable positional superko
+    Rules rules;
+    rules.koRule = Rules::KO_POSITIONAL;
+    rules.scoringRule = Rules::SCORING_AREA;
+    rules.komi = 0.5f;
+    rules.multiStoneSuicideLegal = false;
+    rules.taxRule = Rules::TAX_NONE;
     BoardHistory hist(board,P_BLACK,rules,0);
 
-    // For coverage: manually set superKoBanned and verify the branch
-    Loc testLoc = Location::getLoc(3,3,board.x_size);  // D4 - should be empty
-    testAssert(board.colors[testLoc] == C_EMPTY);
-    hist.superKoBanned[testLoc] = true;  // Manually trigger for coverage
+    // Play the sequence that creates triple-ko superko bans
+    testAssert(hist.isLegal(board, Location::getLoc(3,1,board.x_size), P_BLACK));
+    hist.makeBoardMoveAssumeLegal(board, Location::getLoc(3,1,board.x_size), P_BLACK, NULL);  // B captures at D2
+    testAssert(hist.isLegal(board, Location::getLoc(1,2,board.x_size), P_WHITE));
+    hist.makeBoardMoveAssumeLegal(board, Location::getLoc(1,2,board.x_size), P_WHITE, NULL);  // W recaptures at B3
+    testAssert(hist.isLegal(board, Location::getLoc(5,1,board.x_size), P_BLACK));
+    hist.makeBoardMoveAssumeLegal(board, Location::getLoc(5,1,board.x_size), P_BLACK, NULL);  // B captures at F2
+    testAssert(hist.isLegal(board, Location::getLoc(3,2,board.x_size), P_WHITE));
+    hist.makeBoardMoveAssumeLegal(board, Location::getLoc(3,2,board.x_size), P_WHITE, NULL);  // W recaptures at D3
+    testAssert(hist.isLegal(board, Location::getLoc(1,1,board.x_size), P_BLACK));
+    hist.makeBoardMoveAssumeLegal(board, Location::getLoc(1,1,board.x_size), P_BLACK, NULL);  // B captures at B2
 
-    string result = checkMove(board, hist, testLoc, P_BLACK);
-    out << "Superko (manual): " << result << endl;
+    // Now White at (5,2) should be superko-banned
+    Loc superkoLoc = Location::getLoc(5,2,board.x_size);
+    testAssert(hist.superKoBanned[superkoLoc]);
 
-    testAssert(result.find("\"isLegal\":false") != string::npos);
-    testAssert(result.find("\"reason\":\"superko\"") != string::npos);
-    hist.superKoBanned[testLoc] = false;  // Clean up
+    PlayUtils::CheckMoveResult r = PlayUtils::checkMoveLegality(board, hist, superkoLoc, P_WHITE);
+    out << "Superko (triple-ko): " << toJson(board, r, superkoLoc, P_WHITE) << endl;
+
+    testAssert(!r.isLegal);
+    testAssert(r.reason == "superko");
   }
 
   //============================================================================
@@ -2801,11 +2781,11 @@ x....
     Loc oobLoc = -5;
     testAssert(!board.isOnBoard(oobLoc));
 
-    string result = checkMove(board, hist, oobLoc, P_BLACK);
-    out << "Out of bounds: " << result << endl;
+    PlayUtils::CheckMoveResult r = PlayUtils::checkMoveLegality(board, hist, oobLoc, P_BLACK);
+    out << "Out of bounds: " << toJson(board, r, oobLoc, P_BLACK) << endl;
 
-    testAssert(result.find("\"isLegal\":false") != string::npos);
-    testAssert(result.find("\"reason\":\"out_of_bounds\"") != string::npos);
+    testAssert(!r.isLegal);
+    testAssert(r.reason == "out_of_bounds");
   }
 
   cout << "All kata-check-move tests passed" << endl;
