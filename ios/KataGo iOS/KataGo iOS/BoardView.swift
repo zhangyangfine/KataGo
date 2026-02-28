@@ -90,7 +90,7 @@ struct BoardView: View {
                     isPresented: $confirmingOverwrite,
                     titleVisibility: .visible
                 ) {
-                    Button("Overwite", role: .destructive) {
+                    Button("Overwrite", role: .destructive) {
                         if gobanState.isPendingMoveStale {
                             gobanState.clearPendingMove()
                         }

@@ -567,6 +567,15 @@ struct ContentView: View {
             return  // Different JSON command response — leave pending state intact
         }
 
+        // Validate that vertex and color match the pending move to avoid consuming stale responses
+        // Compare case-insensitively: Swift stores "b"/"w", C++ returns "B"/"W"
+        let vertex = json["vertex"] as? String
+        let color = json["color"] as? String
+        guard vertex?.lowercased() == gobanState.pendingMoveVertex?.lowercased(),
+              color?.lowercased() == gobanState.pendingMoveTurn?.lowercased() else {
+            return  // Stale or mismatched response
+        }
+
         if isLegal {
             if let gameRecord = navigationContext.selectedGameRecord {
                 gobanState.playPendingHumanMove(

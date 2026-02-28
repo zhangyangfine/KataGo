@@ -194,6 +194,9 @@ struct GameSplitView: View {
         case "ko": return "This move violates the ko rule."
         case "suicide": return "This move is a suicide (self-capture)."
         case "superko": return "This move violates the superko rule."
+        case "occupied": return "This position is already occupied."
+        case "wrong_turn": return "It is not your turn to play."
+        case "out_of_bounds": return "This position is out of bounds."
         default: return "This move is illegal."
         }
     }
