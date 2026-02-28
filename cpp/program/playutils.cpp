@@ -1264,6 +1264,10 @@ PlayUtils::CheckMoveResult PlayUtils::checkMoveLegality(const Board& board, cons
   if(loc == Board::PASS_LOC) {
     // Pass is always legal
   }
+  else if(pla != hist.presumedNextMovePla) {
+    result.isLegal = false;
+    result.reason = "wrong_turn";
+  }
   else if(!board.isOnBoard(loc)) {
     result.isLegal = false;
     result.reason = "out_of_bounds";
@@ -1283,10 +1287,6 @@ PlayUtils::CheckMoveResult PlayUtils::checkMoveLegality(const Board& board, cons
   else if(hist.superKoBanned[loc]) {
     result.isLegal = false;
     result.reason = "superko";
-  }
-  else if(pla != hist.presumedNextMovePla) {
-    result.isLegal = false;
-    result.reason = "wrong_turn";
   }
 
   return result;

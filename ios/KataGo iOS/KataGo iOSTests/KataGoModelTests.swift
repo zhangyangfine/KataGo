@@ -624,7 +624,7 @@ struct KataGoModelTests {
         #expect(gobanState.confirmingIllegalMove == false)
         #expect(gobanState.illegalMoveReason == nil)
         #expect(gobanState.waitingForAnalysis == false)
-        #expect(gobanState.showBoardCount == 0)
+        #expect(gobanState.showBoardCount == 2) // showBoardCount is not reset by error handler
         #expect(stones.isReady == true)
     }
 
@@ -639,7 +639,7 @@ struct KataGoModelTests {
         #expect(gobanState.confirmingIllegalMove == false)
         #expect(gobanState.illegalMoveReason == nil)
         #expect(gobanState.waitingForAnalysis == false)
-        #expect(gobanState.showBoardCount == 0)
+        #expect(gobanState.showBoardCount == 0) // Initial value, not reset
         #expect(stones.isReady == true)
     }
 
@@ -661,7 +661,7 @@ struct KataGoModelTests {
         let gobanState = GobanState()
         let messageList = MessageList()
         gobanState.sendCheckMoveCommand(turn: "b", move: "D4", messageList: messageList)
-        // Artificially set timestamp to 6 seconds ago
+        // Artificially set timestamp beyond GobanState.pendingMoveTimeout
         gobanState.pendingMoveTimestamp = Date().addingTimeInterval(-6.0)
         #expect(gobanState.isPendingMoveStale == true)
     }

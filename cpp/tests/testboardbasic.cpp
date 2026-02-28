@@ -2788,6 +2788,38 @@ ooooooo
     testAssert(r.reason == "out_of_bounds");
   }
 
+  //============================================================================
+  // Test 9: Wrong turn takes priority over ko
+  //============================================================================
+  {
+    // Same ko setup as Test 5, but the wrong player attempts the ko recapture.
+    // wrong_turn should take priority over ko.
+    Board board = Board::parseBoard(5,5,R"%%(
+xo...
+.xo..
+x....
+.....
+.....
+)%%");
+    Rules rules = Rules::getTrompTaylorish();
+    BoardHistory hist(board,P_WHITE,rules,0);
+
+    // White captures black stone at A5 by playing at A4
+    Loc captureLoc = Location::getLoc(0,1,board.x_size);  // A4
+    hist.makeBoardMoveAssumeLegal(board,captureLoc,P_WHITE,NULL);
+
+    // A5 is now ko-banned
+    Loc koLoc = Location::getLoc(0,0,board.x_size);  // A5
+    testAssert(board.isKoBanned(koLoc));
+
+    // White (the wrong player) tries to play at the ko-banned location
+    PlayUtils::CheckMoveResult r = PlayUtils::checkMoveLegality(board, hist, koLoc, P_WHITE);
+    out << "Wrong turn over ko: " << toJson(board, r, koLoc, P_WHITE) << endl;
+
+    testAssert(!r.isLegal);
+    testAssert(r.reason == "wrong_turn");
+  }
+
   cout << "All kata-check-move tests passed" << endl;
 }
 

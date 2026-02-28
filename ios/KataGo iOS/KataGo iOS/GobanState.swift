@@ -251,17 +251,18 @@ class GobanState {
         illegalMoveReason = nil
     }
 
+    private static let pendingMoveTimeout: TimeInterval = 5.0
+
     var isPendingMoveStale: Bool {
         guard pendingMoveTurn != nil, let timestamp = pendingMoveTimestamp else {
             return false
         }
-        return Date().timeIntervalSince(timestamp) > 5.0
+        return Date().timeIntervalSince(timestamp) > GobanState.pendingMoveTimeout
     }
 
     func resetPendingStatesOnError(stones: Stones) {
         clearPendingMove()
         waitingForAnalysis = false
-        showBoardCount = 0
         stones.isReady = true
     }
 

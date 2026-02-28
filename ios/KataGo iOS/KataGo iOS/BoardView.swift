@@ -91,10 +91,6 @@ struct BoardView: View {
                     titleVisibility: .visible
                 ) {
                     Button("Overwrite", role: .destructive) {
-                        if gobanState.isPendingMoveStale {
-                            gobanState.clearPendingMove()
-                        }
-
                         if let gestureLocation,
                            let coordinate = locationToCoordinate(location: gestureLocation, dimensions: dimensions),
                            let move = coordinate.move,
