@@ -562,7 +562,13 @@ struct ContentView: View {
             return  // Malformed JSON — not our response
         }
 
-        // Only consume responses with "isLegal" key (unique to kata-check-move)
+        // The "isLegal" key uniquely identifies kata-check-move responses.
+        // Other JSON-returning GTP commands do not include this key:
+        //   - kata-get-rules returns rule fields (ko, scoring, tax, etc.)
+        //   - kata-get-params returns search parameter fields
+        //   - kata-get-models returns a JSON array ("= ["), not an object
+        // The vertex/color validation below further guards against any
+        // hypothetical future command that might include an "isLegal" key.
         guard let isLegal = json["isLegal"] as? Bool else {
             return  // Different JSON command response — leave pending state intact
         }
