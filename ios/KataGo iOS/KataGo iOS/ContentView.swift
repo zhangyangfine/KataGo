@@ -592,8 +592,15 @@ struct ContentView: View {
             }
         } else {
             let reason = json["reason"] as? String
-            gobanState.illegalMoveReason = reason
-            gobanState.confirmingIllegalMove = true
+            // Only show "Play Anyway" dialog for rule-based illegalities where
+            // overriding makes sense. For occupied/out_of_bounds/wrong_turn,
+            // the engine would reject the play command anyway.
+            if reason == "ko" || reason == "superko" || reason == "suicide" {
+                gobanState.illegalMoveReason = reason
+                gobanState.confirmingIllegalMove = true
+            } else {
+                gobanState.clearPendingMove()
+            }
         }
     }
 }

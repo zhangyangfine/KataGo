@@ -11,6 +11,7 @@ struct GameListToolbar: ToolbarContent {
     var gameRecord: GameRecord?
     var maxBoardLength: Int
     @Binding var quitStatus: QuitStatus
+
     var body: some ToolbarContent {
         ToolbarItem(id: "ellipsis") {
             PlusMenuView(gameRecord: gameRecord, maxBoardLength: maxBoardLength)
