@@ -8,7 +8,7 @@ on:
 
 jobs:
   xcodebuild:
-    runs-on: macos-13
+    runs-on: macos-15
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -16,7 +16,7 @@ jobs:
     - name: Run Xcode build
       run: |
         cd cpp/xcode
-        /Applications/Xcode_15.0.1.app/Contents/Developer/usr/bin/xcodebuild -derivedDataPath DerivedData -scheme katago -configuration Debug build
+        xcodebuild -derivedDataPath DerivedData -scheme katago -configuration Debug build
 
     - name: Setup configuration
       run: |
@@ -68,7 +68,7 @@ jobs:
     - name: Run Xcode test
       run: |
         cd cpp/xcode
-        /Applications/Xcode_15.0.1.app/Contents/Developer/usr/bin/xcodebuild -derivedDataPath DerivedData -scheme katago -configuration Debug test
+        xcodebuild -derivedDataPath DerivedData -scheme katago -configuration Debug test
 
     - name: Run KataGo tests
       run: |
@@ -80,7 +80,7 @@ jobs:
         ./katago runownershiptests gtp.cfg model.bin.gz
 
   cmake-macos:
-    runs-on: macos-13
+    runs-on: macos-15
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -93,10 +93,10 @@ jobs:
       run: |
         brew install eigen
 
-    - name: Setup Xcode
+    - name: Show Xcode version
       run: |
         xcode-select -p
-        sudo xcode-select -s /Applications/Xcode_15.0.1.app/Contents/Developer
+        xcodebuild -version
 
     - name: Build KataGo with Eigen backend
       run: |
