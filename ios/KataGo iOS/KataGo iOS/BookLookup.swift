@@ -258,7 +258,7 @@ class BookLookup {
 
     // MARK: - Navigation
 
-    func advanceMove(appPoint: BoardPoint, moveIndex: Int, boardWidth: Int, boardHeight: Int) {
+    func advanceMove(appPoint: BoardPoint, boardWidth: Int, boardHeight: Int) {
         guard isInBook, boardWidth == boardSize, boardHeight == boardSize else { return }
 
         let displayPos = appPointToBookPos(appPoint, boardWidth: boardWidth, boardHeight: boardHeight)
@@ -314,7 +314,7 @@ class BookLookup {
 
         resetToRoot()
         for (i, point) in moves.enumerated() {
-            advanceMove(appPoint: point, moveIndex: i + 1, boardWidth: boardWidth, boardHeight: boardHeight)
+            advanceMove(appPoint: point, boardWidth: boardWidth, boardHeight: boardHeight)
             if !isInBook { break }
         }
         justAdvanced = false

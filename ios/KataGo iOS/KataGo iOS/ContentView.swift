@@ -34,6 +34,7 @@ struct ContentView: View {
     @State var quitStatus: QuitStatus = .none
     @State private var topUIState = TopUIState()
     @State var aiMove: String? = nil
+    @State var bookLookup = BookLookup()
 
     var body: some View {
         if isInitialized {
@@ -54,6 +55,7 @@ struct ContentView: View {
             .environment(thumbnailModel)
             .environment(audioModel)
             .environment(topUIState)
+            .environment(bookLookup)
             .task {
                 // Get messages from KataGo and append to the list of messages
                 await messageTask()
@@ -529,6 +531,8 @@ struct ContentView: View {
                 if gobanState.isOverwriting(gameRecord: gameRecord) {
                     gobanState.confirmingAIOverwrite = true
                 } else {
+                    let prePlayIndex = gobanState.getCurrentIndex(gameRecord: gameRecord) ?? gameRecord.currentIndex
+
                     gobanState.playAIMove(
                         aiMove: aiMove,
                         gameRecord: gameRecord,
@@ -540,6 +544,15 @@ struct ContentView: View {
                         player: player,
                         audioModel: audioModel
                     )
+
+                    // Advance book for AI move
+                    if let point = BoardPoint(move: move, width: Int(board.width), height: Int(board.height)) {
+                        bookLookup.advanceMove(
+                            appPoint: point,
+                            boardWidth: Int(board.width),
+                            boardHeight: Int(board.height)
+                        )
+                    }
                 }
             }
         }
@@ -584,6 +597,10 @@ struct ContentView: View {
 
         if isLegal {
             if let gameRecord = navigationContext.selectedGameRecord {
+                // Capture move info for book tracking before clearPendingMove()
+                let moveVertex = gobanState.pendingMoveVertex
+                let prePlayIndex = gobanState.getCurrentIndex(gameRecord: gameRecord) ?? gameRecord.currentIndex
+
                 gobanState.playPendingHumanMove(
                     gameRecord: gameRecord,
                     analysis: analysis,
@@ -593,6 +610,16 @@ struct ContentView: View {
                     player: player,
                     audioModel: audioModel
                 )
+
+                // Advance book for the played move
+                if let move = moveVertex,
+                   let point = BoardPoint(move: move, width: Int(board.width), height: Int(board.height)) {
+                    bookLookup.advanceMove(
+                        appPoint: point,
+                        boardWidth: Int(board.width),
+                        boardHeight: Int(board.height)
+                    )
+                }
             } else {
                 gobanState.clearPendingMove()
             }

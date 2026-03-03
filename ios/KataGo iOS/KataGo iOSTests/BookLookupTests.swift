@@ -230,7 +230,7 @@ struct BookLookupTests {
         let book = BookLookup(positions: BookLookupTests.twoNodeBook())
         // Root child at canonical pos 0; with sym=0, app point for pos 0 is (0,8)
         let appPoint = book.bookToAppPoint(bookX: 0, bookY: 0, boardHeight: 9)
-        book.advanceMove(appPoint: appPoint, moveIndex: 1, boardWidth: 9, boardHeight: 9)
+        book.advanceMove(appPoint: appPoint, boardWidth: 9, boardHeight: 9)
 
         #expect(book.currentPositionId == 1)
         #expect(book.isInBook == true)
@@ -241,7 +241,7 @@ struct BookLookupTests {
         let book = BookLookup(positions: BookLookupTests.branchingBook())
         // Second child is at canonical pos 1 -> book (1,0) -> app (1,8)
         let appPoint = book.bookToAppPoint(bookX: 1, bookY: 0, boardHeight: 9)
-        book.advanceMove(appPoint: appPoint, moveIndex: 1, boardWidth: 9, boardHeight: 9)
+        book.advanceMove(appPoint: appPoint, boardWidth: 9, boardHeight: 9)
 
         #expect(book.currentPositionId == 2)
         #expect(book.isInBook == true)
@@ -251,7 +251,7 @@ struct BookLookupTests {
         let book = BookLookup(positions: BookLookupTests.twoNodeBook())
         // pos (4,4) center has no child
         let center = book.bookToAppPoint(bookX: 4, bookY: 4, boardHeight: 9)
-        book.advanceMove(appPoint: center, moveIndex: 1, boardWidth: 9, boardHeight: 9)
+        book.advanceMove(appPoint: center, boardWidth: 9, boardHeight: 9)
 
         #expect(book.isInBook == false)
         #expect(book.justAdvanced == true)
@@ -261,11 +261,11 @@ struct BookLookupTests {
         let book = BookLookup(positions: BookLookupTests.twoNodeBook())
         // First go out of book
         let center = book.bookToAppPoint(bookX: 4, bookY: 4, boardHeight: 9)
-        book.advanceMove(appPoint: center, moveIndex: 1, boardWidth: 9, boardHeight: 9)
+        book.advanceMove(appPoint: center, boardWidth: 9, boardHeight: 9)
         #expect(book.isInBook == false)
 
         // Second advance should be a no-op (guard returns early)
-        book.advanceMove(appPoint: center, moveIndex: 2, boardWidth: 9, boardHeight: 9)
+        book.advanceMove(appPoint: center, boardWidth: 9, boardHeight: 9)
         #expect(book.isInBook == false)
     }
 
@@ -273,12 +273,12 @@ struct BookLookupTests {
         let book = BookLookup(positions: BookLookupTests.twoNodeBook())
         // Advance to child (leaf)
         let appPoint = book.bookToAppPoint(bookX: 0, bookY: 0, boardHeight: 9)
-        book.advanceMove(appPoint: appPoint, moveIndex: 1, boardWidth: 9, boardHeight: 9)
+        book.advanceMove(appPoint: appPoint, boardWidth: 9, boardHeight: 9)
         #expect(book.currentPositionId == 1)
 
         // Any move from leaf should go out of book
         let center = book.bookToAppPoint(bookX: 4, bookY: 4, boardHeight: 9)
-        book.advanceMove(appPoint: center, moveIndex: 2, boardWidth: 9, boardHeight: 9)
+        book.advanceMove(appPoint: center, boardWidth: 9, boardHeight: 9)
         #expect(book.isInBook == false)
     }
 
@@ -286,7 +286,7 @@ struct BookLookupTests {
         let book = BookLookup(positions: BookLookupTests.twoNodeBook())
         let appPoint = book.bookToAppPoint(bookX: 0, bookY: 0, boardHeight: 9)
         // Use 19x19 board size - should be rejected
-        book.advanceMove(appPoint: appPoint, moveIndex: 1, boardWidth: 19, boardHeight: 19)
+        book.advanceMove(appPoint: appPoint, boardWidth: 19, boardHeight: 19)
 
         // State should be unchanged
         #expect(book.currentPositionId == 0)
@@ -298,7 +298,7 @@ struct BookLookupTests {
     @Test func resetToRootAfterAdvance() {
         let book = BookLookup(positions: BookLookupTests.twoNodeBook())
         let appPoint = book.bookToAppPoint(bookX: 0, bookY: 0, boardHeight: 9)
-        book.advanceMove(appPoint: appPoint, moveIndex: 1, boardWidth: 9, boardHeight: 9)
+        book.advanceMove(appPoint: appPoint, boardWidth: 9, boardHeight: 9)
         #expect(book.currentPositionId == 1)
 
         book.resetToRoot()
@@ -339,7 +339,7 @@ struct BookLookupTests {
         let book = BookLookup(positions: BookLookupTests.twoNodeBook())
         // Advance first, then sync with empty list should reset to root
         let appPoint = book.bookToAppPoint(bookX: 0, bookY: 0, boardHeight: 9)
-        book.advanceMove(appPoint: appPoint, moveIndex: 1, boardWidth: 9, boardHeight: 9)
+        book.advanceMove(appPoint: appPoint, boardWidth: 9, boardHeight: 9)
 
         book.syncFromMoves([], boardWidth: 9, boardHeight: 9)
         #expect(book.currentPositionId == 0)
@@ -359,7 +359,7 @@ struct BookLookupTests {
     @Test func clearJustAdvancedAfterAdvance() {
         let book = BookLookup(positions: BookLookupTests.twoNodeBook())
         let appPoint = book.bookToAppPoint(bookX: 0, bookY: 0, boardHeight: 9)
-        book.advanceMove(appPoint: appPoint, moveIndex: 1, boardWidth: 9, boardHeight: 9)
+        book.advanceMove(appPoint: appPoint, boardWidth: 9, boardHeight: 9)
         #expect(book.justAdvanced == true)
 
         book.clearJustAdvanced()
@@ -387,7 +387,7 @@ struct BookLookupTests {
         let book = BookLookup(positions: BookLookupTests.twoNodeBook())
         // Go out of book
         let center = book.bookToAppPoint(bookX: 4, bookY: 4, boardHeight: 9)
-        book.advanceMove(appPoint: center, moveIndex: 1, boardWidth: 9, boardHeight: 9)
+        book.advanceMove(appPoint: center, boardWidth: 9, boardHeight: 9)
 
         let analysis = book.getBookAnalysis(boardWidth: 9, boardHeight: 9)
         #expect(analysis.isEmpty)
@@ -424,7 +424,7 @@ struct BookLookupTests {
         // Link sym=1 means flip-Y is applied at the child
         let book = BookLookup(positions: BookLookupTests.twoNodeBook(linkSym: 1))
         let appPoint = book.bookToAppPoint(bookX: 0, bookY: 0, boardHeight: 9)
-        book.advanceMove(appPoint: appPoint, moveIndex: 1, boardWidth: 9, boardHeight: 9)
+        book.advanceMove(appPoint: appPoint, boardWidth: 9, boardHeight: 9)
 
         #expect(book.currentPositionId == 1)
         #expect(book.accumulatedSymmetry == 1)
@@ -436,7 +436,7 @@ struct BookLookupTests {
         // pos 72: y=8, x=0. Flip Y: y=0, x=0 -> pos 0. Display (0,8) in app coords.
         let book = BookLookup(positions: BookLookupTests.twoNodeBook(linkSym: 1))
         let appPoint = book.bookToAppPoint(bookX: 0, bookY: 0, boardHeight: 9)
-        book.advanceMove(appPoint: appPoint, moveIndex: 1, boardWidth: 9, boardHeight: 9)
+        book.advanceMove(appPoint: appPoint, boardWidth: 9, boardHeight: 9)
 
         let analysis = book.getBookAnalysis(boardWidth: 9, boardHeight: 9)
         // Canonical 72 with sym=1: y=8,x=0 -> flip Y -> y=0,x=0 -> display pos 0 -> app (0,8)
@@ -458,7 +458,7 @@ struct BookLookupTests {
     @Test func currentPositionOutOfBook() {
         let book = BookLookup(positions: BookLookupTests.twoNodeBook())
         let center = book.bookToAppPoint(bookX: 4, bookY: 4, boardHeight: 9)
-        book.advanceMove(appPoint: center, moveIndex: 1, boardWidth: 9, boardHeight: 9)
+        book.advanceMove(appPoint: center, boardWidth: 9, boardHeight: 9)
         #expect(book.currentPosition == nil)
     }
 
