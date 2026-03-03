@@ -278,6 +278,9 @@
 		E1B0ED912C7DFEBC009DDC25 /* PlusMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B0ED902C7DFEBC009DDC25 /* PlusMenuView.swift */; };
 		E1B0ED962C7E1246009DDC25 /* FastTestPlan.xctestplan in Resources */ = {isa = PBXBuildFile; fileRef = E1B0ED952C7E1246009DDC25 /* FastTestPlan.xctestplan */; };
 		E1B0ED982C7E128A009DDC25 /* FullTestPlan.xctestplan in Resources */ = {isa = PBXBuildFile; fileRef = E1B0ED972C7E128A009DDC25 /* FullTestPlan.xctestplan */; };
+		E1A2B3C52F0A1B2C00AABB01 /* BookLookup.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A2B3C42F0A1B2C00AABB01 /* BookLookup.swift */; };
+		E1A2B3C72F0A1B2C00AABB02 /* BookAnalysisView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A2B3C62F0A1B2C00AABB02 /* BookAnalysisView.swift */; };
+		E1A2B3C92F0A1B2C00AABB03 /* book9x9jp.json.gz in Resources */ = {isa = PBXBuildFile; fileRef = E1A2B3C82F0A1B2C00AABB03 /* book9x9jp.json.gz */; };
 		E1B63BE42AABDF3500094965 /* BoardLineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B63BE32AABDF3500094965 /* BoardLineView.swift */; };
 		E1B675262C95B42C0043E527 /* GameEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B675252C95B42C0043E527 /* GameEntity.swift */; };
 		E1B675282C95C1430043E527 /* GetGameInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B675272C95C1430043E527 /* GetGameInfo.swift */; };
@@ -285,6 +288,7 @@
 		E1BB32A52C70CD7100690E67 /* KataGoModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1BB32A42C70CD7100690E67 /* KataGoModelTests.swift */; };
 		E1BB32A72C721A8300690E67 /* ConfigModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1BB32A62C721A8300690E67 /* ConfigModelTests.swift */; };
 		E1BB32A92C72B73800690E67 /* GameRecordTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1BB32A82C72B73800690E67 /* GameRecordTests.swift */; };
+		E1BB32AB2D95E00000690E67 /* BookLookupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1BB32AA2D95E00000690E67 /* BookLookupTests.swift */; };
 		E1C682712AA2A4E7001B4F44 /* GobanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C682702AA2A4E7001B4F44 /* GobanView.swift */; };
 		E1C682752AA2CC31001B4F44 /* CommandView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C682742AA2CC31001B4F44 /* CommandView.swift */; };
 		E1C6D0C72CDF0E38002C1921 /* GameLinkView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C6D0C62CDF0E38002C1921 /* GameLinkView.swift */; };
@@ -629,6 +633,9 @@
 		E1B0ED902C7DFEBC009DDC25 /* PlusMenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlusMenuView.swift; sourceTree = "<group>"; };
 		E1B0ED952C7E1246009DDC25 /* FastTestPlan.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = FastTestPlan.xctestplan; sourceTree = "<group>"; };
 		E1B0ED972C7E128A009DDC25 /* FullTestPlan.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = FullTestPlan.xctestplan; sourceTree = "<group>"; };
+		E1A2B3C42F0A1B2C00AABB01 /* BookLookup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookLookup.swift; sourceTree = "<group>"; };
+		E1A2B3C62F0A1B2C00AABB02 /* BookAnalysisView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookAnalysisView.swift; sourceTree = "<group>"; };
+		E1A2B3C82F0A1B2C00AABB03 /* book9x9jp.json.gz */ = {isa = PBXFileReference; lastKnownFileType = archive.gzip; path = "book9x9jp.json.gz"; sourceTree = "<group>"; };
 		E1B63BE32AABDF3500094965 /* BoardLineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardLineView.swift; sourceTree = "<group>"; };
 		E1B675252C95B42C0043E527 /* GameEntity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameEntity.swift; sourceTree = "<group>"; };
 		E1B675272C95C1430043E527 /* GetGameInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GetGameInfo.swift; sourceTree = "<group>"; };
@@ -636,6 +643,7 @@
 		E1BB32A42C70CD7100690E67 /* KataGoModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KataGoModelTests.swift; sourceTree = "<group>"; };
 		E1BB32A62C721A8300690E67 /* ConfigModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigModelTests.swift; sourceTree = "<group>"; };
 		E1BB32A82C72B73800690E67 /* GameRecordTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameRecordTests.swift; sourceTree = "<group>"; };
+		E1BB32AA2D95E00000690E67 /* BookLookupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookLookupTests.swift; sourceTree = "<group>"; };
 		E1BB32B02C736AF100690E67 /* ci_post_clone.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = ci_post_clone.sh; sourceTree = "<group>"; };
 		E1C682702AA2A4E7001B4F44 /* GobanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GobanView.swift; sourceTree = "<group>"; };
 		E1C682742AA2CC31001B4F44 /* CommandView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandView.swift; sourceTree = "<group>"; };
@@ -1024,6 +1032,7 @@
 				E1D7D3B22AAA1F5600556DFB /* AnalysisView.swift */,
 				E1B63BE32AABDF3500094965 /* BoardLineView.swift */,
 				E138288C2C6A431600670FD3 /* BoardView.swift */,
+				E1A2B3C62F0A1B2C00AABB02 /* BookAnalysisView.swift */,
 				E1C682742AA2CC31001B4F44 /* CommandView.swift */,
 				E14FBF812C8E8C5D00C702BE /* CommentView.swift */,
 				E1E1717D2AB9DAED004DCC3C /* ConfigView.swift */,
@@ -1055,6 +1064,7 @@
 			isa = PBXGroup;
 			children = (
 				E10C8BAC2C80BECE00477A7B /* AudioModel.swift */,
+				E1A2B3C42F0A1B2C00AABB01 /* BookLookup.swift */,
 				E15A21CB2EDC4CEA00708C25 /* Commentator.swift */,
 				E12A6E9E2C322E020002DED0 /* ConfigModel.swift */,
 				E16E1F3A2DE2C97A00B0F144 /* DebugUtils.swift */,
@@ -1132,6 +1142,7 @@
 				E1BB32A42C70CD7100690E67 /* KataGoModelTests.swift */,
 				E1BB32A62C721A8300690E67 /* ConfigModelTests.swift */,
 				E1BB32A82C72B73800690E67 /* GameRecordTests.swift */,
+				E1BB32AA2D95E00000690E67 /* BookLookupTests.swift */,
 			);
 			path = "KataGo iOSTests";
 			sourceTree = "<group>";
@@ -1165,6 +1176,7 @@
 				E13B92742DD358DA009F8A1A /* PlayGoStone2.mp3 */,
 				E13B92752DD358DA009F8A1A /* PlayGoStone3.mp3 */,
 				E16BC83C2C4D2B2C00EA3A1E /* b18c384nbt-humanv0.bin.gz */,
+				E1A2B3C82F0A1B2C00AABB03 /* book9x9jp.json.gz */,
 				E18F3F752A514B9700D335E1 /* default_gtp.cfg */,
 				E18F3F742A514B9700D335E1 /* default_model.bin.gz */,
 			);
@@ -1501,6 +1513,7 @@
 				E13B927F2DD35B48009F8A1A /* CaptureGoStone1.mp3 in Resources */,
 				E13B92802DD35B48009F8A1A /* CaptureGoStone3.mp3 in Resources */,
 				E16BC83D2C4D2B2C00EA3A1E /* b18c384nbt-humanv0.bin.gz in Resources */,
+				E1A2B3C92F0A1B2C00AABB03 /* book9x9jp.json.gz in Resources */,
 				E18F3E182A51466C00D335E1 /* Preview Assets.xcassets in Resources */,
 				E18F3E152A51466C00D335E1 /* Assets.xcassets in Resources */,
 				E18F3F772A514B9700D335E1 /* default_model.bin.gz in Resources */,
@@ -1718,6 +1731,8 @@
 				E15A218F2ECAAB5600708C25 /* GobanState.swift in Sources */,
 				E1B63BE42AABDF3500094965 /* BoardLineView.swift in Sources */,
 				E138288D2C6A431600670FD3 /* BoardView.swift in Sources */,
+				E1A2B3C72F0A1B2C00AABB02 /* BookAnalysisView.swift in Sources */,
+				E1A2B3C52F0A1B2C00AABB01 /* BookLookup.swift in Sources */,
 				E1B0ED912C7DFEBC009DDC25 /* PlusMenuView.swift in Sources */,
 				E16E1F3F2DE4235000B0F144 /* TerminationModel.swift in Sources */,
 				E1B675282C95C1430043E527 /* GetGameInfo.swift in Sources */,
@@ -1736,6 +1751,7 @@
 				E1BB32A12C70C72A00690E67 /* NavigationContextTests.swift in Sources */,
 				E1BB32A92C72B73800690E67 /* GameRecordTests.swift in Sources */,
 				E1BB32A72C721A8300690E67 /* ConfigModelTests.swift in Sources */,
+				E1BB32AB2D95E00000690E67 /* BookLookupTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

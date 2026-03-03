@@ -27,8 +27,6 @@ class BookLookup {
     private(set) var justAdvanced = false
 
     private var positions: [BookPosition] = []
-    // moveIndex -> (posId, sym) for undo support
-    private var stateHistory: [Int: (posId: Int, sym: Int)] = [:]
     private let boardSize = 9
 
     struct BookPosition {
@@ -52,6 +50,15 @@ class BookLookup {
         }
     }
 
+    /// Test-only initializer that injects hand-crafted positions without file I/O.
+    init(positions: [BookPosition]) {
+        self.positions = positions
+        self.isLoaded = !positions.isEmpty
+        self.isInBook = !positions.isEmpty
+        self.currentPositionId = 0
+        self.accumulatedSymmetry = 0
+    }
+
     // MARK: - Loading
 
     private func loadBook() async {
@@ -72,7 +79,6 @@ class BookLookup {
         self.isInBook = !parsed.isEmpty
         self.currentPositionId = 0
         self.accumulatedSymmetry = 0
-        self.stateHistory = [0: (posId: 0, sym: 0)]
     }
 
     /// Parse the book file on the current thread. Returns nil on failure.
@@ -201,7 +207,7 @@ class BookLookup {
 
     // MARK: - Symmetry functions (ported from book.js)
 
-    private func compose(_ sym1: Int, _ sym2: Int) -> Int {
+    func compose(_ sym1: Int, _ sym2: Int) -> Int {
         var s2 = sym2
         if sym1 & 0x4 != 0 {
             s2 = (s2 & 0x4) | ((s2 & 0x2) >> 1) | ((s2 & 0x1) << 1)
@@ -209,7 +215,7 @@ class BookLookup {
         return sym1 ^ s2
     }
 
-    private func applySymmetry(_ pos: Int, sym: Int) -> Int {
+    func applySymmetry(_ pos: Int, sym: Int) -> Int {
         guard pos < boardSize * boardSize else { return pos }
         var y = pos / boardSize
         var x = pos % boardSize
@@ -221,7 +227,7 @@ class BookLookup {
         return x + y * boardSize
     }
 
-    private func applyInverseSymmetry(_ pos: Int, sym: Int) -> Int {
+    func applyInverseSymmetry(_ pos: Int, sym: Int) -> Int {
         guard pos < boardSize * boardSize else { return pos }
         var y = pos / boardSize
         var x = pos % boardSize
@@ -236,12 +242,12 @@ class BookLookup {
     // MARK: - Coordinate mapping
 
     /// Convert book coordinates (y=0 top) to app BoardPoint (y=0 bottom).
-    private func bookToAppPoint(bookX: Int, bookY: Int, boardHeight: Int) -> BoardPoint {
+    func bookToAppPoint(bookX: Int, bookY: Int, boardHeight: Int) -> BoardPoint {
         return BoardPoint(x: bookX, y: boardHeight - 1 - bookY)
     }
 
     /// Convert app BoardPoint to book position index.
-    private func appPointToBookPos(_ point: BoardPoint, boardWidth: Int, boardHeight: Int) -> Int {
+    func appPointToBookPos(_ point: BoardPoint, boardWidth: Int, boardHeight: Int) -> Int {
         if point.isPass(width: boardWidth, height: boardHeight) {
             return boardSize * boardSize  // 81 for pass
         }
@@ -281,8 +287,6 @@ class BookLookup {
         currentPositionId = child.childId
         accumulatedSymmetry = newSym
 
-        stateHistory[moveIndex] = (posId: child.childId, sym: newSym)
-
         if child.childId >= positions.count {
             isInBook = false
         }
@@ -299,7 +303,6 @@ class BookLookup {
         currentPositionId = 0
         accumulatedSymmetry = 0
         isInBook = !positions.isEmpty
-        stateHistory = [0: (posId: 0, sym: 0)]
     }
 
     /// Replay book state from a list of app BoardPoints (called after undo/forward/game switch).
