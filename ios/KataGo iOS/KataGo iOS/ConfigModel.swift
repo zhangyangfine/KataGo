@@ -170,6 +170,18 @@ final class Config {
 }
 
 extension Config {
+    var isBookCompatible: Bool {
+        boardWidth == 9 && boardHeight == 9 && komi == 6.0
+        && koRule == .simple
+        && scoringRule == .territory
+        && taxRule == .seki
+        && !multiStoneSuicideLegal
+        && !hasButton
+        && whiteHandicapBonusRule == .zero
+    }
+}
+
+extension Config {
     func getKataAnalyzeCommand(analysisInterval: Int) -> String {
         return "kata-analyze interval \(analysisInterval) maxmoves \(maxAnalysisMoves) ownership true ownershipStdev true"
     }

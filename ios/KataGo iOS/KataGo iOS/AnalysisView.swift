@@ -127,53 +127,6 @@ struct AnalysisView: View {
         }
     }
 
-    func winrateText(_ winrate: Float) -> some View {
-        return Text(String(format: "%2.0f%%", (winrate * 100).rounded()))
-            .contentTransition(.numericText())
-            .font(.system(size: 500, design: .monospaced))
-            .minimumScaleFactor(0.01)
-            .bold()
-            .foregroundStyle(.black)
-    }
-
-    func visitsText(_ visits: Int) -> some View {
-        return Text(convertToSIUnits(visits))
-            .contentTransition(.numericText())
-            .font(.system(size: 500, design: .monospaced))
-            .minimumScaleFactor(0.01)
-            .foregroundStyle(.black)
-    }
-
-    func scoreText(_ scoreLead: Float) -> some View {
-        let text = String(format: "%+.0f", scoreLead.rounded())
-
-        return Text(text)
-            .contentTransition(.numericText())
-            .font(.system(size: 500, design: .monospaced))
-            .minimumScaleFactor(0.01)
-            .foregroundStyle(.black)
-    }
-
-    func convertToSIUnits(_ number: Int) -> String {
-        let prefixes: [(prefix: String, value: Int)] = [
-            ("T", 1_000_000_000_000),   // Tera
-            ("G", 1_000_000_000),      // Giga
-            ("M", 1_000_000),          // Mega
-            ("k", 1_000)               // Kilo
-        ]
-
-        var result = Double(number)
-
-        for (prefix, threshold) in prefixes {
-            if number >= threshold {
-                result = Double(number) / Double(threshold)
-                return String(format: "%.1f%@", result, prefix)
-            }
-        }
-
-        return "\(number)"
-    }
-
     func computeBaseColorByVisits(visits: Int, maxVisits: Int) -> Color {
         let ratio = min(1, max(0.01, Float(visits)) / max(0.01, Float(maxVisits)))
         let fraction = 2 / (pow((1 / ratio) - 1, 0.9) + 1)
@@ -224,5 +177,52 @@ struct AnalysisView: View {
         }
 
         return maxVisits
+    }
+}
+
+// MARK: - Shared Analysis Text Views
+
+func convertToSIUnits(_ number: Int) -> String {
+    let prefixes: [(prefix: String, value: Int)] = [
+        ("T", 1_000_000_000_000),
+        ("G", 1_000_000_000),
+        ("M", 1_000_000),
+        ("k", 1_000)
+    ]
+
+    for (prefix, threshold) in prefixes {
+        if number >= threshold {
+            let result = Double(number) / Double(threshold)
+            return String(format: "%.1f%@", result, prefix)
+        }
+    }
+
+    return "\(number)"
+}
+
+extension View {
+    func winrateText(_ winrate: Float) -> some View {
+        Text(String(format: "%2.0f%%", (winrate * 100).rounded()))
+            .contentTransition(.numericText())
+            .font(.system(size: 500, design: .monospaced))
+            .minimumScaleFactor(0.01)
+            .bold()
+            .foregroundStyle(.black)
+    }
+
+    func visitsText(_ visits: Int) -> some View {
+        Text(convertToSIUnits(visits))
+            .contentTransition(.numericText())
+            .font(.system(size: 500, design: .monospaced))
+            .minimumScaleFactor(0.01)
+            .foregroundStyle(.black)
+    }
+
+    func scoreText(_ scoreLead: Float) -> some View {
+        Text(String(format: "%+.0f", scoreLead.rounded()))
+            .contentTransition(.numericText())
+            .font(.system(size: 500, design: .monospaced))
+            .minimumScaleFactor(0.01)
+            .foregroundStyle(.black)
     }
 }

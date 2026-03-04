@@ -17,6 +17,7 @@ struct StatusToolbarItems: View {
     @Environment(MessageList.self) var messageList
     @Environment(Analysis.self) var analysis
     @Environment(Stones.self) var stones
+    @Environment(BookLookup.self) var bookLookup
 
     var gameRecord: GameRecord
 
@@ -107,9 +108,9 @@ struct StatusToolbarItems: View {
             createButton(
                 action: eyeAction,
                 image:
-                    Image(systemName: (gobanState.eyeStatus == .opened) ? "eye" : "eye.slash")
+                    Image(systemName: eyeIconName)
             )
-            .foregroundStyle((gobanState.eyeStatus == .closed) ? .red : .primary)
+            .foregroundStyle(eyeForegroundStyle)
             .contentTransition(.symbolEffect(.replace))
 
             createButton(
@@ -205,12 +206,35 @@ struct StatusToolbarItems: View {
         }
     }
 
+    var eyeIconName: String {
+        switch gobanState.eyeStatus {
+        case .opened: "eye"
+        case .book: "book"
+        case .closed: "eye.slash"
+        }
+    }
+
+    var eyeForegroundStyle: Color {
+        switch gobanState.eyeStatus {
+        case .opened: .primary
+        case .book: .accentColor
+        case .closed: .red
+        }
+    }
+
     func eyeAction() {
         withAnimation {
-            if gobanState.eyeStatus == .closed {
-                gobanState.eyeStatus = .opened
-            } else {
+            switch gobanState.eyeStatus {
+            case .opened:
+                if config.isBookCompatible && bookLookup.isLoaded {
+                    gobanState.eyeStatus = .book
+                } else {
+                    gobanState.eyeStatus = .closed
+                }
+            case .book:
                 gobanState.eyeStatus = .closed
+            case .closed:
+                gobanState.eyeStatus = .opened
             }
         }
     }
@@ -259,6 +283,7 @@ struct StatusToolbarItems: View {
         let messageList = MessageList()
         let analysis = Analysis()
         let gameRecord = GameRecord(config: Config())
+        let bookLookup = BookLookup()
 
         var body: some View {
             VStack(alignment: .leading) {
@@ -270,6 +295,7 @@ struct StatusToolbarItems: View {
                     .environment(board)
                     .environment(messageList)
                     .environment(analysis)
+                    .environment(bookLookup)
                     .environment(\.dynamicTypeSize, .accessibility5)
 
                 Text("xSmall:")
@@ -280,6 +306,7 @@ struct StatusToolbarItems: View {
                     .environment(board)
                     .environment(messageList)
                     .environment(analysis)
+                    .environment(bookLookup)
                     .environment(\.dynamicTypeSize, .xSmall)
 
             }

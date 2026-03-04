@@ -322,6 +322,22 @@ class BookLookup {
 
     // MARK: - Display
 
+    private var bestMove: BookMove? {
+        currentPosition?.moves.first
+    }
+
+    /// Black winrate (0..1) for the best book move, or nil if not in book.
+    var bestBlackWinrate: Float? {
+        guard let bestMove else { return nil }
+        return Float((1.0 - bestMove.winLoss) / 2.0)
+    }
+
+    /// Black score lead for the best book move, or nil if not in book.
+    var bestBlackScore: Float? {
+        guard let bestMove else { return nil }
+        return Float(-bestMove.sharpScore)
+    }
+
     var currentPosition: BookPosition? {
         guard isInBook, currentPositionId < positions.count else { return nil }
         return positions[currentPositionId]

@@ -32,6 +32,7 @@ struct GameSplitView: View {
     @Environment(ThumbnailModel.self) var thumbnailModel
     @Environment(AudioModel.self) var audioModel
     @Environment(TopUIState.self) var topUIState
+    @Environment(BookLookup.self) var bookLookup
 
     @Environment(\.scenePhase) var scenePhase
     @Environment(\.modelContext) private var modelContext
@@ -164,6 +165,16 @@ struct GameSplitView: View {
                 messageList.appendAndSend(command: "stop")
             }
         }
+        .onChange(of: bookLookup.isLoaded) { _, newValue in
+            if newValue {
+                syncBookState()
+            }
+        }
+        .onChange(of: gobanState.eyeStatus) { _, newEyeStatus in
+            if newEyeStatus == .book {
+                syncBookState()
+            }
+        }
         .confirmationDialog(
             "Are you sure you want to delete this game? THIS ACTION IS IRREVERSIBLE!",
             isPresented: $topUIState.confirmingDeletion,
@@ -226,6 +237,9 @@ struct GameSplitView: View {
             if gobanState.isAutoPlayed {
                 gameRecord.currentIndex += 1
             }
+
+            // Sync book state after undo/forward/backward
+            syncBookState()
         }
     }
 
@@ -332,6 +346,7 @@ struct GameSplitView: View {
                 .environment(analysis)
                 .environment(gobanState)
                 .environment(player)
+                .environment(bookLookup)
 
             let renderer = ImageRenderer(content: content)
 #if os(macOS)
@@ -374,6 +389,7 @@ struct GameSplitView: View {
         player.nextColorForPlayCommand = .unknown
         gobanState.deactivateBranch()
         gobanState.clearPendingMove()
+        bookLookup.resetToRoot()
 
         if let newGameRecord {
             newGameRecord.updateToLatestVersion()
@@ -473,6 +489,34 @@ struct GameSplitView: View {
             (!newBranchStateSgf.isActiveSgf) {
             processChange(oldGameRecord: nil, newGameRecord: navigationContext.selectedGameRecord)
         }
+    }
+
+    func syncBookState() {
+        if bookLookup.justAdvanced {
+            bookLookup.clearJustAdvanced()
+            return
+        }
+
+        guard let gameRecord = navigationContext.selectedGameRecord,
+              gameRecord.concreteConfig.isBookCompatible,
+              bookLookup.isLoaded else {
+            return
+        }
+
+        let sgf = gobanState.getSgf(gameRecord: gameRecord) ?? gameRecord.sgf
+        let currentIndex = gobanState.getCurrentIndex(gameRecord: gameRecord) ?? gameRecord.currentIndex
+        let sgfHelper = SgfHelper(sgf: sgf)
+        let width = Int(board.width)
+        let height = Int(board.height)
+
+        var moves: [BoardPoint] = []
+        for i in 0..<currentIndex {
+            if let move = sgfHelper.getMove(at: i) {
+                moves.append(BoardPoint(location: move.location, width: width, height: height))
+            }
+        }
+
+        bookLookup.syncFromMoves(moves, boardWidth: width, boardHeight: height)
     }
 
     private func placeLoadingBoard(width: Int, height: Int) {

@@ -17,6 +17,9 @@ struct BoardView: View {
     @Environment(Stones.self) var stones
     @Environment(MessageList.self) var messageList
     @Environment(Analysis.self) var analysis
+    @Environment(BookLookup.self) var bookLookup
+    @Environment(Winrate.self) var rootWinrate
+    @Environment(Score.self) var rootScore
     var gameRecord: GameRecord
     @FocusState<Bool>.Binding var commentIsFocused: Bool
     @State private var confirmingOverwrite: Bool = false
@@ -52,9 +55,10 @@ struct BoardView: View {
                                  verticalFlip: config.verticalFlip)
 
                     AnalysisView(config: config, dimensions: dimensions)
+                    BookAnalysisView(config: config, dimensions: dimensions)
                     MoveNumberView(dimensions: dimensions, verticalFlip: config.verticalFlip)
 
-                    if config.showWinrateBar && (gobanState.eyeStatus == .opened) {
+                    if config.showWinrateBar && (gobanState.eyeStatus == .opened || (gobanState.eyeStatus == .book && bookLookup.isInBook)) {
                         WinrateBarView(dimensions: dimensions)
                     }
                 }
@@ -142,9 +146,25 @@ struct BoardView: View {
                     audioModel.playCaptureSound(soundEffect: gobanState.soundEffect)
                 }
             }
+            .onChange(of: gobanState.eyeStatus) {
+                updateWinrateFromBook()
+            }
+            .onChange(of: bookLookup.currentPositionId) {
+                updateWinrateFromBook()
+            }
             .onDisappear {
                 gobanState.maybePauseAnalysis()
             }
+        }
+    }
+
+    private func updateWinrateFromBook() {
+        guard gobanState.eyeStatus == .book else { return }
+        if let wr = bookLookup.bestBlackWinrate {
+            rootWinrate.black = wr
+        }
+        if let sc = bookLookup.bestBlackScore {
+            rootScore.black = sc
         }
     }
 

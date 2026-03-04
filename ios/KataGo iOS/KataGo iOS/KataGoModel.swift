@@ -443,6 +443,7 @@ extension Int {
 
 enum EyeStatus {
     case opened
+    case book
     case closed
 }
 
