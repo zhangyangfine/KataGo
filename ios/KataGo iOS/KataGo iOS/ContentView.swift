@@ -533,8 +533,6 @@ struct ContentView: View {
                 if gobanState.isOverwriting(gameRecord: gameRecord) {
                     gobanState.confirmingAIOverwrite = true
                 } else {
-                    let prePlayIndex = gobanState.getCurrentIndex(gameRecord: gameRecord) ?? gameRecord.currentIndex
-
                     gobanState.playAIMove(
                         aiMove: aiMove,
                         gameRecord: gameRecord,
@@ -603,8 +601,6 @@ struct ContentView: View {
             if let gameRecord = navigationContext.selectedGameRecord {
                 // Capture move info for book tracking before clearPendingMove()
                 let moveVertex = gobanState.pendingMoveVertex
-                let prePlayIndex = gobanState.getCurrentIndex(gameRecord: gameRecord) ?? gameRecord.currentIndex
-
                 gobanState.playPendingHumanMove(
                     gameRecord: gameRecord,
                     analysis: analysis,

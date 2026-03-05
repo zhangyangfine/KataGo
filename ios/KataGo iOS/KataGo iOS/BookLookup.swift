@@ -313,7 +313,7 @@ class BookLookup {
         }
 
         resetToRoot()
-        for (i, point) in moves.enumerated() {
+        for (_, point) in moves.enumerated() {
             advanceMove(appPoint: point, boardWidth: boardWidth, boardHeight: boardHeight)
             if !isInBook { break }
         }
