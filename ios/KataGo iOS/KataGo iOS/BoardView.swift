@@ -160,11 +160,13 @@ struct BoardView: View {
 
     private func updateWinrateFromBook() {
         guard gobanState.eyeStatus == .book else { return }
-        if let wr = bookLookup.bestBlackWinrate {
-            rootWinrate.black = wr
-        }
-        if let sc = bookLookup.bestBlackScore {
-            rootScore.black = sc
+        withAnimation {
+            if let wr = bookLookup.bestBlackWinrate {
+                rootWinrate.black = wr
+            }
+            if let sc = bookLookup.bestBlackScore {
+                rootScore.black = sc
+            }
         }
     }
 
