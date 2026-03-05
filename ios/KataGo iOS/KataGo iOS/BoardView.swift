@@ -29,6 +29,10 @@ struct BoardView: View {
         gameRecord.concreteConfig
     }
 
+    var shouldShowWinrateBar: Bool {
+        config.showWinrateBar && (gobanState.eyeStatus == .opened || (gobanState.eyeStatus == .book && bookLookup.isInBook))
+    }
+
     var body: some View {
         VStack {
 #if os(macOS)
@@ -58,8 +62,9 @@ struct BoardView: View {
                     BookAnalysisView(config: config, dimensions: dimensions)
                     MoveNumberView(dimensions: dimensions, verticalFlip: config.verticalFlip)
 
-                    if config.showWinrateBar && (gobanState.eyeStatus == .opened || (gobanState.eyeStatus == .book && bookLookup.isInBook)) {
+                    if shouldShowWinrateBar {
                         WinrateBarView(dimensions: dimensions)
+                            .transition(.opacity)
                     }
                 }
                 .onTapGesture { location in

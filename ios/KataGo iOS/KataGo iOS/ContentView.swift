@@ -549,11 +549,13 @@ struct ContentView: View {
 
                     // Advance book for AI move
                     if let point = BoardPoint(move: move, width: Int(board.width), height: Int(board.height)) {
-                        bookLookup.advanceMove(
-                            appPoint: point,
-                            boardWidth: Int(board.width),
-                            boardHeight: Int(board.height)
-                        )
+                        withAnimation {
+                            bookLookup.advanceMove(
+                                appPoint: point,
+                                boardWidth: Int(board.width),
+                                boardHeight: Int(board.height)
+                            )
+                        }
                     }
                 }
             }
@@ -616,11 +618,13 @@ struct ContentView: View {
                 // Advance book for the played move
                 if let move = moveVertex,
                    let point = BoardPoint(move: move, width: Int(board.width), height: Int(board.height)) {
-                    bookLookup.advanceMove(
-                        appPoint: point,
-                        boardWidth: Int(board.width),
-                        boardHeight: Int(board.height)
-                    )
+                    withAnimation {
+                        bookLookup.advanceMove(
+                            appPoint: point,
+                            boardWidth: Int(board.width),
+                            boardHeight: Int(board.height)
+                        )
+                    }
                 }
             } else {
                 gobanState.clearPendingMove()

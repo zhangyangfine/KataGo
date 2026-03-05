@@ -470,7 +470,9 @@ struct ViewConfigView: View {
                     showWinrateBar = config.showWinrateBar
                 }
                 .onChange(of: showWinrateBar) { _, newValue in
-                    config.showWinrateBar = newValue
+                    withAnimation {
+                        config.showWinrateBar = newValue
+                    }
                 }
         }
     }

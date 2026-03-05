@@ -389,7 +389,9 @@ struct GameSplitView: View {
         player.nextColorForPlayCommand = .unknown
         gobanState.deactivateBranch()
         gobanState.clearPendingMove()
-        bookLookup.resetToRoot()
+        withAnimation {
+            bookLookup.resetToRoot()
+        }
 
         if let newGameRecord {
             newGameRecord.updateToLatestVersion()
@@ -516,7 +518,9 @@ struct GameSplitView: View {
             }
         }
 
-        bookLookup.syncFromMoves(moves, boardWidth: width, boardHeight: height)
+        withAnimation {
+            bookLookup.syncFromMoves(moves, boardWidth: width, boardHeight: height)
+        }
     }
 
     private func placeLoadingBoard(width: Int, height: Int) {
