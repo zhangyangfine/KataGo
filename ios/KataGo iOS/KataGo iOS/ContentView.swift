@@ -80,7 +80,10 @@ struct ContentView: View {
         sendInitialCommands(config: gameRecords.first?.concreteConfig)
         navigationContext.selectedGameRecord = gameRecords.first
         navigationContext.selectedGameRecord?.updateToLatestVersion()
-        
+        if gameRecords.first?.concreteConfig.isBookCompatible == true {
+            bookLookup.loadIfNeeded()
+        }
+
         gobanState.maybeLoadSgf(
             gameRecord: navigationContext.selectedGameRecord,
             messageList: messageList

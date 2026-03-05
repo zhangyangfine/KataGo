@@ -394,6 +394,9 @@ struct GameSplitView: View {
         }
 
         if let newGameRecord {
+            if newGameRecord.concreteConfig.isBookCompatible {
+                bookLookup.loadIfNeeded()
+            }
             newGameRecord.updateToLatestVersion()
             gobanState.isAutoPlaying = false
             gobanState.isAutoPlayed = false

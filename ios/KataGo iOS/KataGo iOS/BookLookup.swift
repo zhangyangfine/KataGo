@@ -26,6 +26,7 @@ class BookLookup {
     private(set) var accumulatedSymmetry: Int = 0
     private(set) var justAdvanced = false
 
+    private var isLoading = false
     private var positions: [BookPosition] = []
     private let boardSize = 9
 
@@ -44,10 +45,12 @@ class BookLookup {
         let policyPrior: Double
     }
 
-    init() {
-        Task {
-            await loadBook()
-        }
+    init() {}
+
+    func loadIfNeeded() {
+        guard !isLoaded, !isLoading else { return }
+        isLoading = true
+        Task { await loadBook() }
     }
 
     /// Test-only initializer that injects hand-crafted positions without file I/O.
@@ -313,7 +316,7 @@ class BookLookup {
         }
 
         resetToRoot()
-        for (_, point) in moves.enumerated() {
+        for point in moves {
             advanceMove(appPoint: point, boardWidth: boardWidth, boardHeight: boardHeight)
             if !isInBook { break }
         }
