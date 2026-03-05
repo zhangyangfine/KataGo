@@ -353,11 +353,13 @@ struct ContentView: View {
                 analysis.ownershipUnits = ownershipUnits
                 analysis.nextColorForAnalysis = player.nextColorFromShowBoard
 
-                if let blackWinrate = analysis.blackWinrate {
-                    rootWinrate.black = blackWinrate
-                }
+                if gobanState.eyeStatus != .book {
+                    if let blackWinrate = analysis.blackWinrate {
+                        rootWinrate.black = blackWinrate
+                    }
 
-                rootScore.black = analysis.blackScore ?? 0
+                    rootScore.black = analysis.blackScore ?? 0
+                }
             }
 
             gobanState.waitingForAnalysis = analysisInfo.isEmpty
