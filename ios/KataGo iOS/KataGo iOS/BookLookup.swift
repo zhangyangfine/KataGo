@@ -62,7 +62,7 @@ class BookLookup {
     // MARK: - Loading
 
     private func loadBook() async {
-        guard let url = Bundle.main.url(forResource: "book9x9jp.json", withExtension: "gz") else {
+        guard let url = Bundle.main.url(forResource: "book9x9jp-20260226.json", withExtension: "gz") else {
             return
         }
 

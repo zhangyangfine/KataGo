@@ -280,7 +280,7 @@
 		E1B0ED982C7E128A009DDC25 /* FullTestPlan.xctestplan in Resources */ = {isa = PBXBuildFile; fileRef = E1B0ED972C7E128A009DDC25 /* FullTestPlan.xctestplan */; };
 		E1A2B3C52F0A1B2C00AABB01 /* BookLookup.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A2B3C42F0A1B2C00AABB01 /* BookLookup.swift */; };
 		E1A2B3C72F0A1B2C00AABB02 /* BookAnalysisView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A2B3C62F0A1B2C00AABB02 /* BookAnalysisView.swift */; };
-		E1A2B3C92F0A1B2C00AABB03 /* book9x9jp.json.gz in Resources */ = {isa = PBXBuildFile; fileRef = E1A2B3C82F0A1B2C00AABB03 /* book9x9jp.json.gz */; };
+		E1A2B3C92F0A1B2C00AABB03 /* book9x9jp-20260226.json.gz in Resources */ = {isa = PBXBuildFile; fileRef = E1A2B3C82F0A1B2C00AABB03 /* book9x9jp-20260226.json.gz */; };
 		E1B63BE42AABDF3500094965 /* BoardLineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B63BE32AABDF3500094965 /* BoardLineView.swift */; };
 		E1B675262C95B42C0043E527 /* GameEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B675252C95B42C0043E527 /* GameEntity.swift */; };
 		E1B675282C95C1430043E527 /* GetGameInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B675272C95C1430043E527 /* GetGameInfo.swift */; };
@@ -635,7 +635,7 @@
 		E1B0ED972C7E128A009DDC25 /* FullTestPlan.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = FullTestPlan.xctestplan; sourceTree = "<group>"; };
 		E1A2B3C42F0A1B2C00AABB01 /* BookLookup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookLookup.swift; sourceTree = "<group>"; };
 		E1A2B3C62F0A1B2C00AABB02 /* BookAnalysisView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookAnalysisView.swift; sourceTree = "<group>"; };
-		E1A2B3C82F0A1B2C00AABB03 /* book9x9jp.json.gz */ = {isa = PBXFileReference; lastKnownFileType = archive.gzip; path = "book9x9jp.json.gz"; sourceTree = "<group>"; };
+		E1A2B3C82F0A1B2C00AABB03 /* book9x9jp-20260226.json.gz */ = {isa = PBXFileReference; lastKnownFileType = archive.gzip; path = "book9x9jp-20260226.json.gz"; sourceTree = "<group>"; };
 		E1B63BE32AABDF3500094965 /* BoardLineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardLineView.swift; sourceTree = "<group>"; };
 		E1B675252C95B42C0043E527 /* GameEntity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameEntity.swift; sourceTree = "<group>"; };
 		E1B675272C95C1430043E527 /* GetGameInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GetGameInfo.swift; sourceTree = "<group>"; };
@@ -1176,7 +1176,7 @@
 				E13B92742DD358DA009F8A1A /* PlayGoStone2.mp3 */,
 				E13B92752DD358DA009F8A1A /* PlayGoStone3.mp3 */,
 				E16BC83C2C4D2B2C00EA3A1E /* b18c384nbt-humanv0.bin.gz */,
-				E1A2B3C82F0A1B2C00AABB03 /* book9x9jp.json.gz */,
+				E1A2B3C82F0A1B2C00AABB03 /* book9x9jp-20260226.json.gz */,
 				E18F3F752A514B9700D335E1 /* default_gtp.cfg */,
 				E18F3F742A514B9700D335E1 /* default_model.bin.gz */,
 			);
@@ -1513,7 +1513,7 @@
 				E13B927F2DD35B48009F8A1A /* CaptureGoStone1.mp3 in Resources */,
 				E13B92802DD35B48009F8A1A /* CaptureGoStone3.mp3 in Resources */,
 				E16BC83D2C4D2B2C00EA3A1E /* b18c384nbt-humanv0.bin.gz in Resources */,
-				E1A2B3C92F0A1B2C00AABB03 /* book9x9jp.json.gz in Resources */,
+				E1A2B3C92F0A1B2C00AABB03 /* book9x9jp-20260226.json.gz in Resources */,
 				E18F3E182A51466C00D335E1 /* Preview Assets.xcassets in Resources */,
 				E18F3E152A51466C00D335E1 /* Assets.xcassets in Resources */,
 				E18F3F772A514B9700D335E1 /* default_model.bin.gz in Resources */,
