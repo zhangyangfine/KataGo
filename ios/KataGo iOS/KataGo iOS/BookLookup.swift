@@ -8,6 +8,7 @@
 import Foundation
 import Compression
 import SwiftUI
+import os
 
 struct BookMoveInfo {
     let winLoss: Double
@@ -32,6 +33,8 @@ private let childEntrySize = 8
 @MainActor
 @Observable
 class BookLookup {
+    private nonisolated static let logger = Logger(subsystem: "com.chinchangyang.KataGo-iOS", category: "BookLookup")
+
     private(set) var isLoaded = false
     private(set) var isInBook = false
     private(set) var currentPositionId: Int = 0
@@ -184,6 +187,7 @@ class BookLookup {
 
     private func loadBook() async {
         guard let bundleURL = Bundle.main.url(forResource: "book9x9jp-20260226.kbook", withExtension: "gz") else {
+            Self.logger.error("Bundle URL not found for book9x9jp-20260226.kbook.gz")
             return
         }
 
@@ -213,12 +217,22 @@ class BookLookup {
         let bundleMod = (try? fm.attributesOfItem(atPath: bundleURL.path)[.modificationDate] as? Date) ?? .distantPast
         let cacheMod = (try? fm.attributesOfItem(atPath: cachedURL.path)[.modificationDate] as? Date) ?? .distantPast
         if cacheMod >= bundleMod, let data = try? Data(contentsOf: cachedURL, options: .mappedIfSafe) {
-            return data
+            // Validate cache isn't corrupted
+            if data.count >= 4, data.readUInt32(at: 0) == kbookMagic {
+                return data
+            }
+            // Corrupted cache — fall through to re-decompress
+            logger.warning("Corrupted cache file detected, re-decompressing")
+            try? FileManager.default.removeItem(at: cachedURL)
         }
 
         // Decompress from bundle
-        guard let compressedData = try? Data(contentsOf: bundleURL),
-              let decompressedData = decompressGzip(compressedData) else {
+        guard let compressedData = try? Data(contentsOf: bundleURL) else {
+            logger.error("Failed to read compressed data from bundle")
+            return nil
+        }
+        guard let decompressedData = decompressGzip(compressedData) else {
+            logger.error("Decompression failed for book data")
             return nil
         }
 
@@ -229,15 +243,28 @@ class BookLookup {
 
     /// Load binary book data and validate header. Returns true on success.
     private func loadFromData(_ data: Data) -> Bool {
-        guard data.count >= headerSize else { return false }
+        guard data.count >= headerSize else {
+            Self.logger.error("Book data truncated: \(data.count) bytes < \(headerSize) header size")
+            return false
+        }
 
         let magic = data.readUInt32(at: 0)
         let version = data.readUInt32(at: 4)
 
-        guard magic == kbookMagic, version == kbookVersion else { return false }
+        guard magic == kbookMagic else {
+            Self.logger.error("Bad magic: 0x\(String(magic, radix: 16)), expected 0x\(String(kbookMagic, radix: 16))")
+            return false
+        }
+        guard version == kbookVersion else {
+            Self.logger.error("Bad version: \(version), expected \(kbookVersion)")
+            return false
+        }
 
         let boardSizeVal = data.readUInt32(at: 8)
-        guard boardSizeVal == UInt32(boardSize) else { return false }
+        guard boardSizeVal == UInt32(boardSize) else {
+            Self.logger.error("Bad board size: \(boardSizeVal), expected \(self.boardSize)")
+            return false
+        }
 
         self.positionCount = data.readUInt32(at: 12)
         self.moveCount = data.readUInt32(at: 16)
@@ -252,7 +279,10 @@ class BookLookup {
 
         // Validate data size
         let expectedMinSize = movePositionsTableOffset + Int(movePositionCount)
-        guard data.count >= expectedMinSize else { return false }
+        guard data.count >= expectedMinSize else {
+            Self.logger.error("Book data truncated: \(data.count) bytes < \(expectedMinSize) expected")
+            return false
+        }
 
         self.bookData = data
         return true
@@ -272,6 +302,7 @@ class BookLookup {
     private func readPosition(at index: Int) -> PositionEntry? {
         guard let data = bookData, index >= 0, index < Int(positionCount) else { return nil }
         let offset = positionTableOffset + index * positionEntrySize
+        guard offset + positionEntrySize <= data.count else { return nil }
         return data.withUnsafeBytes { buf in
             PositionEntry(
                 nextPlayer: buf.load(fromByteOffset: offset, as: UInt8.self),
@@ -296,6 +327,7 @@ class BookLookup {
     private func readMove(at index: Int) -> MoveEntry? {
         guard let data = bookData, index >= 0, index < Int(moveCount) else { return nil }
         let offset = movesTableOffset + index * moveEntrySize
+        guard offset + moveEntrySize <= data.count else { return nil }
         return data.withUnsafeBytes { buf in
             MoveEntry(
                 positionsStart: UInt32(littleEndian: buf.loadUnaligned(fromByteOffset: offset, as: UInt32.self)),
@@ -311,7 +343,9 @@ class BookLookup {
     /// Read move position at the given index in the move positions table.
     private func readMovePosition(at index: Int) -> UInt8? {
         guard let data = bookData, index >= 0, index < Int(movePositionCount) else { return nil }
-        return data[movePositionsTableOffset + index]
+        let offset = movePositionsTableOffset + index
+        guard offset < data.count else { return nil }
+        return data[offset]
     }
 
     /// Read child entry fields at the given child index.
@@ -324,6 +358,7 @@ class BookLookup {
     private func readChild(at index: Int) -> ChildEntry? {
         guard let data = bookData, index >= 0, index < Int(childCount) else { return nil }
         let offset = childrenTableOffset + index * childEntrySize
+        guard offset + childEntrySize <= data.count else { return nil }
         return ChildEntry(
             canonicalPos: data[offset],
             sym: data[offset + 1],
@@ -351,6 +386,7 @@ class BookLookup {
               data[0] == 0x1f,
               data[1] == 0x8b,
               data[2] == 0x08 else {
+            logger.error("Invalid gzip header")
             return nil
         }
 
@@ -375,34 +411,48 @@ class BookLookup {
             offset += 2
         }
 
-        guard offset < data.count - 8 else { return nil }
+        guard offset < data.count - 8 else {
+            logger.error("Truncated gzip header fields at offset \(offset)")
+            return nil
+        }
 
         // Read uncompressed size from ISIZE (last 4 bytes, little-endian, mod 2^32)
         let isize = Int(data.readUInt32(at: data.count - 4))
 
         let deflateData = data[offset..<(data.count - 8)]
         // Use isize as hint, but allow larger (isize is mod 2^32)
-        let destCapacity = max(isize, deflateData.count * 4)
+        var capacity = max(isize, deflateData.count * 4)
+        let maxCapacity = 256 * 1024 * 1024  // 256 MB safety limit
 
-        guard destCapacity > 0 else { return nil }
+        guard capacity > 0 else { return nil }
 
-        var result = Data(count: destCapacity)
-        let decodedSize = result.withUnsafeMutableBytes { destBuffer in
-            deflateData.withUnsafeBytes { srcBuffer in
-                compression_decode_buffer(
-                    destBuffer.bindMemory(to: UInt8.self).baseAddress!,
-                    destCapacity,
-                    srcBuffer.bindMemory(to: UInt8.self).baseAddress!,
-                    deflateData.count,
-                    nil,
-                    COMPRESSION_ZLIB
-                )
+        while capacity <= maxCapacity {
+            var result = Data(count: capacity)
+            let decodedSize = result.withUnsafeMutableBytes { destBuffer in
+                deflateData.withUnsafeBytes { srcBuffer in
+                    compression_decode_buffer(
+                        destBuffer.bindMemory(to: UInt8.self).baseAddress!,
+                        capacity,
+                        srcBuffer.bindMemory(to: UInt8.self).baseAddress!,
+                        deflateData.count,
+                        nil,
+                        COMPRESSION_ZLIB
+                    )
+                }
             }
+            guard decodedSize > 0 else {
+                logger.error("Decompression failed (size=0)")
+                return nil
+            }
+            if decodedSize < capacity {
+                result.count = decodedSize
+                return result
+            }
+            // decodedSize == capacity: might be truncated, retry with larger buffer
+            capacity *= 2
         }
-
-        guard decodedSize > 0, decodedSize < destCapacity else { return nil }
-        result.count = decodedSize
-        return result
+        logger.error("Decompression exceeded max capacity (\(maxCapacity) bytes)")
+        return nil
     }
 
     // MARK: - Symmetry functions (ported from book.js)

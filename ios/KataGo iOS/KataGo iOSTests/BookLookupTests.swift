@@ -454,10 +454,10 @@ struct BookLookupTests {
 
         // Verify header
         #expect(data.count >= 32)
-        // Magic should be 0x4B424F4B
-        #expect(data[0] == 0x4B)
-        #expect(data[1] == 0x4F)
-        #expect(data[2] == 0x42)
-        #expect(data[3] == 0x4B)
+        // Magic 0x4B424F4B ("KBOK") stored as little-endian: 4B 4F 42 4B
+        #expect(data[0] == 0x4B)  // 'K'
+        #expect(data[1] == 0x4F)  // 'O'
+        #expect(data[2] == 0x42)  // 'B'
+        #expect(data[3] == 0x4B)  // 'K'
     }
 }
