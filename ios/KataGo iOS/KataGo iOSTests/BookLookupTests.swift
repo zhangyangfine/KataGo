@@ -8,6 +8,13 @@
 import Testing
 @testable import KataGo_Anytime
 
+/// Typealias for the position tuple used by BookLookup's test initializer.
+fileprivate typealias TestPosition = (
+    nextPlayer: Int,
+    moves: [(positions: [Int], winLoss: Double, sharpScore: Double, adjustedVisits: Int64, policyPrior: Double)],
+    children: [(canonicalPos: Int, childId: Int, sym: Int)]
+)
+
 @MainActor
 struct BookLookupTests {
 
@@ -15,60 +22,35 @@ struct BookLookupTests {
 
     /// Root (pos 0, black to play) has one move at canonical pos 0 (top-left)
     /// leading to child pos 1 (white to play, leaf with no children).
-    static func twoNodeBook(linkSym: Int = 0) -> [BookLookup.BookPosition] {
-        let rootMove = BookLookup.BookMove(
-            positions: [0],
-            winLoss: 0.6,
-            sharpScore: 2.5,
-            adjustedVisits: 100,
-            policyPrior: 0.8
-        )
-        let root = BookLookup.BookPosition(
+    fileprivate static func twoNodeBook(linkSym: Int = 0) -> [TestPosition] {
+        let root: TestPosition = (
             nextPlayer: 1,
-            moves: [rootMove],
-            children: [0: (childId: 1, sym: linkSym)]
+            moves: [(positions: [0], winLoss: 0.6, sharpScore: 2.5, adjustedVisits: 100, policyPrior: 0.8)],
+            children: [(canonicalPos: 0, childId: 1, sym: linkSym)]
         )
-        let childMove = BookLookup.BookMove(
-            positions: [72],  // pos 72 = (8,0) bottom-left on 9x9
-            winLoss: -0.3,
-            sharpScore: -1.0,
-            adjustedVisits: 50,
-            policyPrior: 0.5
-        )
-        let child = BookLookup.BookPosition(
+        let child: TestPosition = (
             nextPlayer: 2,
-            moves: [childMove],
-            children: [:]
+            moves: [(positions: [72], winLoss: -0.3, sharpScore: -1.0, adjustedVisits: 50, policyPrior: 0.5)],
+            children: []
         )
         return [root, child]
     }
 
     /// Root with two children at pos 0 and pos 1.
-    static func branchingBook() -> [BookLookup.BookPosition] {
-        let move0 = BookLookup.BookMove(
-            positions: [0],
-            winLoss: 0.6,
-            sharpScore: 2.5,
-            adjustedVisits: 100,
-            policyPrior: 0.8
-        )
-        let move1 = BookLookup.BookMove(
-            positions: [1],
-            winLoss: 0.4,
-            sharpScore: 1.0,
-            adjustedVisits: 80,
-            policyPrior: 0.6
-        )
-        let root = BookLookup.BookPosition(
+    fileprivate static func branchingBook() -> [TestPosition] {
+        let root: TestPosition = (
             nextPlayer: 1,
-            moves: [move0, move1],
+            moves: [
+                (positions: [0], winLoss: 0.6, sharpScore: 2.5, adjustedVisits: 100, policyPrior: 0.8),
+                (positions: [1], winLoss: 0.4, sharpScore: 1.0, adjustedVisits: 80, policyPrior: 0.6)
+            ],
             children: [
-                0: (childId: 1, sym: 0),
-                1: (childId: 2, sym: 0)
+                (canonicalPos: 0, childId: 1, sym: 0),
+                (canonicalPos: 1, childId: 2, sym: 0)
             ]
         )
-        let child0 = BookLookup.BookPosition(nextPlayer: 2, moves: [], children: [:])
-        let child1 = BookLookup.BookPosition(nextPlayer: 2, moves: [], children: [:])
+        let child0: TestPosition = (nextPlayer: 2, moves: [], children: [])
+        let child1: TestPosition = (nextPlayer: 2, moves: [], children: [])
         return [root, child0, child1]
     }
 
@@ -85,14 +67,9 @@ struct BookLookupTests {
     @Test func composeInverse() {
         let book = BookLookup(positions: BookLookupTests.twoNodeBook())
         for s in 0..<8 {
-            // Composing with self should yield identity for pure flips (sym < 4)
-            // but for all syms, composing s with inverse(s) == 0
-            // inverse of sym s is: if s >= 4, swap bits 0,1 then XOR
-            // Actually let's just verify compose(s, inv) == 0 by searching
             var found = false
             for inv in 0..<8 {
                 if book.compose(s, inv) == 0 {
-                    // Also verify the reverse
                     #expect(book.compose(inv, s) == 0)
                     found = true
                     break
@@ -376,10 +353,11 @@ struct BookLookupTests {
         let appPoint = book.bookToAppPoint(bookX: 0, bookY: 0, boardHeight: 9)
         let info = analysis[appPoint]
         #expect(info != nil)
-        #expect(info?.winLoss == 0.6)
-        #expect(info?.sharpScore == 2.5)
+        // Float32 round-trip: compare with tolerance
+        #expect(abs((info?.winLoss ?? 0) - 0.6) < 0.001)
+        #expect(abs((info?.sharpScore ?? 0) - 2.5) < 0.01)
         #expect(info?.adjustedVisits == 100)
-        #expect(info?.policyPrior == 0.8)
+        #expect(abs((info?.policyPrior ?? 0) - 0.8) < 0.001)
         #expect(info?.rank == 0)
     }
 
@@ -400,8 +378,8 @@ struct BookLookupTests {
     }
 
     @Test func getBookAnalysisLeafWithNoMoves() {
-        let positions = [
-            BookLookup.BookPosition(nextPlayer: 1, moves: [], children: [:])
+        let positions: [TestPosition] = [
+            (nextPlayer: 1, moves: [], children: [])
         ]
         let book = BookLookup(positions: positions)
         let analysis = book.getBookAnalysis(boardWidth: 9, boardHeight: 9)
@@ -442,28 +420,44 @@ struct BookLookupTests {
         // Canonical 72 with sym=1: y=8,x=0 -> flip Y -> y=0,x=0 -> display pos 0 -> app (0,8)
         let expectedPoint = book.bookToAppPoint(bookX: 0, bookY: 0, boardHeight: 9)
         #expect(analysis[expectedPoint] != nil)
-        #expect(analysis[expectedPoint]?.winLoss == -0.3)
+        #expect(abs((analysis[expectedPoint]?.winLoss ?? 0) - (-0.3)) < 0.001)
     }
 
-    // MARK: - currentPosition
+    // MARK: - currentNextPlayer / currentMovesCount
 
-    @Test func currentPositionAtRoot() {
+    @Test func currentNextPlayerAtRoot() {
         let book = BookLookup(positions: BookLookupTests.twoNodeBook())
-        let pos = book.currentPosition
-        #expect(pos != nil)
-        #expect(pos?.nextPlayer == 1)
-        #expect(pos?.moves.count == 1)
+        #expect(book.currentNextPlayer == 1)
+        #expect(book.currentMovesCount == 1)
     }
 
-    @Test func currentPositionOutOfBook() {
+    @Test func currentNextPlayerOutOfBook() {
         let book = BookLookup(positions: BookLookupTests.twoNodeBook())
         let center = book.bookToAppPoint(bookX: 4, bookY: 4, boardHeight: 9)
         book.advanceMove(appPoint: center, boardWidth: 9, boardHeight: 9)
-        #expect(book.currentPosition == nil)
+        #expect(book.currentNextPlayer == nil)
+        #expect(book.currentMovesCount == nil)
     }
 
-    @Test func currentPositionEmptyBook() {
+    @Test func currentNextPlayerEmptyBook() {
         let book = BookLookup(positions: [])
-        #expect(book.currentPosition == nil)
+        #expect(book.currentNextPlayer == nil)
+        #expect(book.currentMovesCount == nil)
+    }
+
+    // MARK: - Binary format validation
+
+    @Test func binarySerializationRoundTrip() {
+        // Verify that serializing and loading gives correct data
+        let positions: [TestPosition] = BookLookupTests.twoNodeBook()
+        let data = BookLookup.serializeToBinary(positions: positions)
+
+        // Verify header
+        #expect(data.count >= 32)
+        // Magic should be 0x4B424F4B
+        #expect(data[0] == 0x4B)
+        #expect(data[1] == 0x4F)
+        #expect(data[2] == 0x42)
+        #expect(data[3] == 0x4B)
     }
 }

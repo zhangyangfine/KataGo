@@ -2,13 +2,19 @@
 """Build a compact opening book database from KataGo HTML book files.
 
 Parses HTML files via BFS from root, extracts embedded JavaScript data,
-and outputs a compact gzipped JSON file for the iOS app.
+and outputs a compact gzipped file for the iOS app.
+
+Supports two output formats:
+  - binary (.kbook.gz): Compact binary format with mmap support (default)
+  - json (.json.gz): Legacy JSON format
+
+The --av-threshold flag filters moves by adjusted visits.
 
 Usage:
     python scripts/build_book_db.py \
         --book-dir ~/Code/KataGoBooks/book9x9jp-20260226 \
-        --output ios/KataGo\ iOS/Resources/book9x9jp.json.gz \
-        --av-threshold 1000000
+        --output "ios/KataGo iOS/Resources/book9x9jp-20260226.kbook.gz" \\
+        --av-threshold 10000
 """
 
 import argparse
@@ -16,10 +22,20 @@ import gzip
 import json
 import os
 import re
+import struct
 import sys
 from collections import deque
 
 BOARD_SIZE = 9
+
+# Binary format constants
+MAGIC = 0x4B424F4B  # "KBOK"
+VERSION = 1
+HEADER_SIZE = 32
+POSITION_ENTRY_SIZE = 16
+MOVE_ENTRY_SIZE = 28
+CHILD_ENTRY_SIZE = 8
+MOVE_POSITION_ENTRY_SIZE = 1
 
 
 def parse_html(filepath):
@@ -182,6 +198,188 @@ def build_book(book_dir, av_threshold):
     return positions
 
 
+def write_json(positions, output_path):
+    """Write positions as gzipped JSON (legacy format)."""
+    book = {
+        "m": {"s": BOARD_SIZE, "k": 6},
+        "p": positions,
+    }
+
+    json_bytes = json.dumps(book, separators=(",", ":")).encode("utf-8")
+
+    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+    with gzip.open(output_path, "wb", compresslevel=9) as f:
+        f.write(json_bytes)
+
+    compressed_size = os.path.getsize(output_path)
+    print(f"Uncompressed: {len(json_bytes) / 1024 / 1024:.1f} MB", file=sys.stderr)
+    print(f"Compressed: {compressed_size / 1024 / 1024:.1f} MB", file=sys.stderr)
+
+
+def write_binary(positions, output_path):
+    """Write positions as gzipped binary (.kbook) format.
+
+    Binary layout (all little-endian, 4-byte aligned):
+
+    Header (32 bytes):
+      UInt32 magic = 0x4B424F4B ("KBOK")
+      UInt32 version = 1
+      UInt32 boardSize
+      UInt32 positionCount
+      UInt32 moveCount (total across all positions)
+      UInt32 childCount (total across all positions)
+      UInt32 movePositionCount (total across all moves)
+      UInt32 reserved = 0
+
+    Position Table (positionCount × 16 bytes each):
+      UInt8  nextPlayer
+      UInt8  _pad
+      UInt16 movesCount
+      UInt32 movesStart        (index into Moves Table)
+      UInt16 childrenCount
+      UInt16 _pad2
+      UInt32 childrenStart     (index into Children Table)
+
+    Moves Table (moveCount × 28 bytes each):
+      UInt32 positionsStart    (index into Move Positions Table)
+      UInt8  positionsCount
+      UInt8  _pad[3]
+      Float32 winLoss
+      Float32 sharpScore
+      Int64  adjustedVisits
+      Float32 policyPrior
+
+    Children Table (childCount × 8 bytes each):
+      UInt8  canonicalPos      (0–81)
+      UInt8  sym               (0–7)
+      UInt16 _pad
+      UInt32 childId           (position index)
+
+    Move Positions Table (movePositionCount × 1 byte each):
+      UInt8  position          (0–81)
+    """
+    # First pass: count totals
+    total_moves = 0
+    total_children = 0
+    total_move_positions = 0
+
+    for pos in positions:
+        next_pla, moves, children = pos
+        total_moves += len(moves)
+        total_children += len(children)
+        for move in moves:
+            total_move_positions += len(move[0])  # pos_list
+
+    print(f"Total moves: {total_moves}", file=sys.stderr)
+    print(f"Total children: {total_children}", file=sys.stderr)
+    print(f"Total move positions: {total_move_positions}", file=sys.stderr)
+
+    # Second pass: build binary data
+    position_count = len(positions)
+
+    # Pre-allocate buffers
+    header_buf = bytearray(HEADER_SIZE)
+    pos_buf = bytearray(position_count * POSITION_ENTRY_SIZE)
+    moves_buf = bytearray(total_moves * MOVE_ENTRY_SIZE)
+    children_buf = bytearray(total_children * CHILD_ENTRY_SIZE)
+    move_pos_buf = bytearray(total_move_positions * MOVE_POSITION_ENTRY_SIZE)
+
+    # Write header
+    struct.pack_into(
+        "<IIIIIIII",
+        header_buf,
+        0,
+        MAGIC,
+        VERSION,
+        BOARD_SIZE,
+        position_count,
+        total_moves,
+        total_children,
+        total_move_positions,
+        0,  # reserved
+    )
+
+    move_idx = 0
+    child_idx = 0
+    move_pos_idx = 0
+
+    for i, pos in enumerate(positions):
+        next_pla, moves, children = pos
+
+        # Write position entry
+        struct.pack_into(
+            "<BBHIHHI",
+            pos_buf,
+            i * POSITION_ENTRY_SIZE,
+            next_pla,       # UInt8 nextPlayer
+            0,              # UInt8 _pad
+            len(moves),     # UInt16 movesCount
+            move_idx,       # UInt32 movesStart
+            len(children),  # UInt16 childrenCount
+            0,              # UInt16 _pad2
+            child_idx,      # UInt32 childrenStart
+        )
+
+        # Write moves for this position
+        for move in moves:
+            pos_list, wl, ss, av, p = move
+
+            struct.pack_into(
+                "<IBBBBffqf",
+                moves_buf,
+                move_idx * MOVE_ENTRY_SIZE,
+                move_pos_idx,     # UInt32 positionsStart
+                len(pos_list),    # UInt8 positionsCount
+                0,                # UInt8 _pad
+                0,                # UInt8 _pad
+                0,                # UInt8 _pad
+                float(wl),        # Float32 winLoss
+                float(ss),        # Float32 sharpScore
+                int(av),          # Int64 adjustedVisits
+                float(p),         # Float32 policyPrior
+            )
+
+            # Write move positions
+            for mp in pos_list:
+                struct.pack_into("<B", move_pos_buf, move_pos_idx, mp)
+                move_pos_idx += 1
+
+            move_idx += 1
+
+        # Write children for this position
+        for child in children:
+            c_pos, c_child_id, c_sym = child
+
+            struct.pack_into(
+                "<BBHI",
+                children_buf,
+                child_idx * CHILD_ENTRY_SIZE,
+                c_pos,       # UInt8 canonicalPos
+                c_sym,       # UInt8 sym
+                0,           # UInt16 _pad
+                c_child_id,  # UInt32 childId
+            )
+            child_idx += 1
+
+    # Combine all buffers
+    binary_data = bytes(header_buf) + bytes(pos_buf) + bytes(moves_buf) + bytes(children_buf) + bytes(move_pos_buf)
+
+    # Pad to 4-byte alignment
+    remainder = len(binary_data) % 4
+    if remainder:
+        binary_data += b"\x00" * (4 - remainder)
+
+    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+    with gzip.open(output_path, "wb", compresslevel=9) as f:
+        f.write(binary_data)
+
+    compressed_size = os.path.getsize(output_path)
+    print(
+        f"Uncompressed: {len(binary_data) / 1024 / 1024:.1f} MB", file=sys.stderr
+    )
+    print(f"Compressed: {compressed_size / 1024 / 1024:.1f} MB", file=sys.stderr)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Build compact opening book database from KataGo HTML book files"
@@ -190,13 +388,19 @@ def main():
         "--book-dir", required=True, help="Path to KataGo book directory"
     )
     parser.add_argument(
-        "--output", required=True, help="Output path for gzipped JSON"
+        "--output", required=True, help="Output path for gzipped book file"
     )
     parser.add_argument(
         "--av-threshold",
         type=int,
-        default=1000000,
-        help="Minimum adjusted visits to include a move (default: 1000000)",
+        default=10000,
+        help="Minimum adjusted visits to include a move (default: 10000)",
+    )
+    parser.add_argument(
+        "--format",
+        choices=["json", "binary"],
+        default="binary",
+        help="Output format: 'binary' (.kbook.gz, default) or 'json' (.json.gz, legacy)",
     )
     args = parser.parse_args()
 
@@ -212,22 +416,13 @@ def main():
         if positions[i] is None:
             positions[i] = [1, [], []]
 
-    book = {
-        "m": {"s": BOARD_SIZE, "k": 6},
-        "p": positions,
-    }
-
     print(f"Total positions: {len(positions)}", file=sys.stderr)
 
-    json_bytes = json.dumps(book, separators=(",", ":")).encode("utf-8")
+    if args.format == "json":
+        write_json(positions, args.output)
+    else:
+        write_binary(positions, args.output)
 
-    os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
-    with gzip.open(args.output, "wb", compresslevel=9) as f:
-        f.write(json_bytes)
-
-    compressed_size = os.path.getsize(args.output)
-    print(f"Uncompressed: {len(json_bytes) / 1024 / 1024:.1f} MB", file=sys.stderr)
-    print(f"Compressed: {compressed_size / 1024 / 1024:.1f} MB", file=sys.stderr)
     print("Done!", file=sys.stderr)
 
 

@@ -35,7 +35,7 @@ struct BookAnalysisView: View {
                     let color = badnessColor(
                         info: info,
                         bestInfo: bestMoveInfo,
-                        nextPlayer: bookLookup.currentPosition?.nextPlayer ?? 1
+                        nextPlayer: bookLookup.currentNextPlayer ?? 1
                     )
 
                     ZStack {
@@ -49,7 +49,7 @@ struct BookAnalysisView: View {
                             }
 
                         if !config.isAnalysisInformationNone {
-                            moveText(info: info, nextPlayer: bookLookup.currentPosition?.nextPlayer ?? 1)
+                            moveText(info: info, nextPlayer: bookLookup.currentNextPlayer ?? 1)
                         }
                     }
 #if !os(macOS)

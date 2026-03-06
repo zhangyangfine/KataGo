@@ -17,6 +17,18 @@ struct BookMoveInfo {
     let rank: Int
 }
 
+// MARK: - Binary format constants
+
+/// Binary book format (.kbook) layout — all little-endian, 4-byte aligned.
+///
+/// The book is built with --av-threshold 10000 (minimum adjusted visits).
+private let kbookMagic: UInt32 = 0x4B424F4B  // "KBOK"
+private let kbookVersion: UInt32 = 1
+private let headerSize = 32
+private let positionEntrySize = 16
+private let moveEntrySize = 28
+private let childEntrySize = 8
+
 @MainActor
 @Observable
 class BookLookup {
@@ -27,23 +39,19 @@ class BookLookup {
     private(set) var justAdvanced = false
 
     private var isLoading = false
-    private var positions: [BookPosition] = []
+    private var bookData: Data?
+    private var positionCount: UInt32 = 0
+    private var moveCount: UInt32 = 0
+    private var childCount: UInt32 = 0
+    private var movePositionCount: UInt32 = 0
+
+    // Precomputed table offsets
+    private var positionTableOffset: Int = 0
+    private var movesTableOffset: Int = 0
+    private var childrenTableOffset: Int = 0
+    private var movePositionsTableOffset: Int = 0
+
     private let boardSize = 9
-
-    struct BookPosition {
-        let nextPlayer: Int  // 1 = black, 2 = white
-        let moves: [BookMove]
-        // canonicalPos -> (childId, linkSym)
-        let children: [Int: (childId: Int, sym: Int)]
-    }
-
-    struct BookMove {
-        let positions: [Int]  // canonical positions (y*boardSize+x), boardSize*boardSize for pass
-        let winLoss: Double
-        let sharpScore: Double
-        let adjustedVisits: Int64
-        let policyPrior: Double
-    }
 
     init() {}
 
@@ -53,95 +61,287 @@ class BookLookup {
         Task { await loadBook() }
     }
 
-    /// Test-only initializer that injects hand-crafted positions without file I/O.
-    init(positions: [BookPosition]) {
-        self.positions = positions
-        self.isLoaded = !positions.isEmpty
-        self.isInBook = !positions.isEmpty
-        self.currentPositionId = 0
-        self.accumulatedSymmetry = 0
+    /// Test-only initializer that serializes hand-crafted positions into
+    /// in-memory binary Data, then loads from that.
+    init(positions: [(nextPlayer: Int, moves: [(positions: [Int], winLoss: Double, sharpScore: Double, adjustedVisits: Int64, policyPrior: Double)], children: [(canonicalPos: Int, childId: Int, sym: Int)])]) {
+        guard !positions.isEmpty else { return }
+        let data = Self.serializeToBinary(positions: positions)
+        if loadFromData(data) {
+            self.isLoaded = true
+            self.isInBook = self.positionCount > 0
+        }
+    }
+
+    // MARK: - Binary serialization (for tests)
+
+    /// Serialize hand-crafted positions into binary format Data.
+    nonisolated static func serializeToBinary(positions: [(nextPlayer: Int, moves: [(positions: [Int], winLoss: Double, sharpScore: Double, adjustedVisits: Int64, policyPrior: Double)], children: [(canonicalPos: Int, childId: Int, sym: Int)])]) -> Data {
+        // Count totals
+        var totalMoves = 0
+        var totalChildren = 0
+        var totalMovePositions = 0
+        for pos in positions {
+            totalMoves += pos.moves.count
+            totalChildren += pos.children.count
+            for move in pos.moves {
+                totalMovePositions += move.positions.count
+            }
+        }
+
+        let posCount = UInt32(positions.count)
+        var data = Data(capacity: headerSize
+                        + positions.count * positionEntrySize
+                        + totalMoves * moveEntrySize
+                        + totalChildren * childEntrySize
+                        + totalMovePositions)
+
+        // Header
+        appendUInt32(&data, kbookMagic)
+        appendUInt32(&data, kbookVersion)
+        appendUInt32(&data, 9)  // boardSize
+        appendUInt32(&data, posCount)
+        appendUInt32(&data, UInt32(totalMoves))
+        appendUInt32(&data, UInt32(totalChildren))
+        appendUInt32(&data, UInt32(totalMovePositions))
+        appendUInt32(&data, 0)  // reserved
+
+        // Position table
+        var moveIdx: UInt32 = 0
+        var childIdx: UInt32 = 0
+        for pos in positions {
+            data.append(UInt8(pos.nextPlayer))  // nextPlayer
+            data.append(0)                       // _pad
+            appendUInt16(&data, UInt16(pos.moves.count))   // movesCount
+            appendUInt32(&data, moveIdx)         // movesStart
+            appendUInt16(&data, UInt16(pos.children.count)) // childrenCount
+            appendUInt16(&data, 0)               // _pad2
+            appendUInt32(&data, childIdx)        // childrenStart
+            moveIdx += UInt32(pos.moves.count)
+            childIdx += UInt32(pos.children.count)
+        }
+
+        // Moves table
+        var movePosIdx: UInt32 = 0
+        for pos in positions {
+            for move in pos.moves {
+                appendUInt32(&data, movePosIdx)          // positionsStart
+                data.append(UInt8(move.positions.count))  // positionsCount
+                data.append(0)                            // _pad
+                data.append(0)                            // _pad
+                data.append(0)                            // _pad
+                appendFloat32(&data, Float(move.winLoss))     // winLoss
+                appendFloat32(&data, Float(move.sharpScore))  // sharpScore
+                appendInt64(&data, move.adjustedVisits)       // adjustedVisits
+                appendFloat32(&data, Float(move.policyPrior)) // policyPrior
+                movePosIdx += UInt32(move.positions.count)
+            }
+        }
+
+        // Children table
+        for pos in positions {
+            for child in pos.children {
+                data.append(UInt8(child.canonicalPos))  // canonicalPos
+                data.append(UInt8(child.sym))           // sym
+                appendUInt16(&data, 0)                  // _pad
+                appendUInt32(&data, UInt32(child.childId)) // childId
+            }
+        }
+
+        // Move positions table
+        for pos in positions {
+            for move in pos.moves {
+                for p in move.positions {
+                    data.append(UInt8(p))
+                }
+            }
+        }
+
+        return data
+    }
+
+    private nonisolated static func appendLittleEndian<T: FixedWidthInteger>(_ data: inout Data, _ value: T) {
+        var v = value.littleEndian
+        withUnsafeBytes(of: &v) { data.append(contentsOf: $0) }
+    }
+
+    private nonisolated static func appendUInt16(_ data: inout Data, _ value: UInt16) {
+        appendLittleEndian(&data, value)
+    }
+
+    private nonisolated static func appendUInt32(_ data: inout Data, _ value: UInt32) {
+        appendLittleEndian(&data, value)
+    }
+
+    private nonisolated static func appendInt64(_ data: inout Data, _ value: Int64) {
+        appendLittleEndian(&data, value)
+    }
+
+    private nonisolated static func appendFloat32(_ data: inout Data, _ value: Float) {
+        appendLittleEndian(&data, value.bitPattern)
     }
 
     // MARK: - Loading
 
     private func loadBook() async {
-        guard let url = Bundle.main.url(forResource: "book9x9jp-20260226.json", withExtension: "gz") else {
+        guard let bundleURL = Bundle.main.url(forResource: "book9x9jp-20260226.kbook", withExtension: "gz") else {
             return
         }
 
-        // Parse off the main thread to avoid blocking UI
         let parseTask = Task.detached(priority: .userInitiated) {
-            Self.parseBookFile(at: url)
+            Self.loadBinaryBook(bundleURL: bundleURL)
         }
-        guard let parsed = await parseTask.value else {
+        guard let data = await parseTask.value else {
             return
         }
 
-        self.positions = parsed
-        self.isLoaded = true
-        self.isInBook = !parsed.isEmpty
-        self.currentPositionId = 0
-        self.accumulatedSymmetry = 0
+        if loadFromData(data) {
+            self.isLoaded = true
+            self.isInBook = self.positionCount > 0
+            self.currentPositionId = 0
+            self.accumulatedSymmetry = 0
+        }
     }
 
-    /// Parse the book file on the current thread. Returns nil on failure.
-    private nonisolated static func parseBookFile(at url: URL) -> [BookPosition]? {
-        guard let compressedData = try? Data(contentsOf: url),
-              let decompressedData = decompressGzip(compressedData),
-              let json = try? JSONSerialization.jsonObject(with: decompressedData) as? [String: Any],
-              let positionsArray = json["p"] as? [Any] else {
+    /// Decompress .kbook.gz to caches dir on first launch, then mmap.
+    private nonisolated static func loadBinaryBook(bundleURL: URL) -> Data? {
+        let filename = bundleURL.deletingPathExtension().lastPathComponent
+        let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        let cachedURL = cacheDir.appendingPathComponent(filename)
+
+        // Try to use cached decompressed file via mmap (skip fileExists to avoid TOCTOU)
+        let fm = FileManager.default
+        let bundleMod = (try? fm.attributesOfItem(atPath: bundleURL.path)[.modificationDate] as? Date) ?? .distantPast
+        let cacheMod = (try? fm.attributesOfItem(atPath: cachedURL.path)[.modificationDate] as? Date) ?? .distantPast
+        if cacheMod >= bundleMod, let data = try? Data(contentsOf: cachedURL, options: .mappedIfSafe) {
+            return data
+        }
+
+        // Decompress from bundle
+        guard let compressedData = try? Data(contentsOf: bundleURL),
+              let decompressedData = decompressGzip(compressedData) else {
             return nil
         }
 
-        var parsed: [BookPosition] = []
-        parsed.reserveCapacity(positionsArray.count)
+        // Write to cache for future launches, use in-memory data now
+        try? decompressedData.write(to: cachedURL)
+        return decompressedData
+    }
 
-        for posAny in positionsArray {
-            guard let posArr = posAny as? [Any],
-                  posArr.count >= 3,
-                  let np = posArr[0] as? Int,
-                  let movesArr = posArr[1] as? [Any],
-                  let childrenArr = posArr[2] as? [Any] else {
-                parsed.append(BookPosition(nextPlayer: 1, moves: [], children: [:]))
-                continue
-            }
+    /// Load binary book data and validate header. Returns true on success.
+    private func loadFromData(_ data: Data) -> Bool {
+        guard data.count >= headerSize else { return false }
 
-            // Parse moves: [[pos_list, wl, ss, av, p], ...]
-            var moves: [BookMove] = []
-            for moveAny in movesArr {
-                guard let moveArr = moveAny as? [Any],
-                      moveArr.count >= 5,
-                      let posList = moveArr[0] as? [Int] else {
-                    continue
-                }
-                let wl = (moveArr[1] as? NSNumber)?.doubleValue ?? 0
-                let ss = (moveArr[2] as? NSNumber)?.doubleValue ?? 0
-                let av = Int64((moveArr[3] as? NSNumber)?.doubleValue ?? 0)
-                let p = (moveArr[4] as? NSNumber)?.doubleValue ?? 0
+        let magic = data.readUInt32(at: 0)
+        let version = data.readUInt32(at: 4)
 
-                moves.append(BookMove(
-                    positions: posList,
-                    winLoss: wl,
-                    sharpScore: ss,
-                    adjustedVisits: av,
-                    policyPrior: p
-                ))
-            }
+        guard magic == kbookMagic, version == kbookVersion else { return false }
 
-            // Parse children: [[pos, childId, sym], ...]
-            var children: [Int: (childId: Int, sym: Int)] = [:]
-            for childAny in childrenArr {
-                guard let childArr = childAny as? [Int],
-                      childArr.count >= 3 else {
-                    continue
-                }
-                children[childArr[0]] = (childId: childArr[1], sym: childArr[2])
-            }
+        let boardSizeVal = data.readUInt32(at: 8)
+        guard boardSizeVal == UInt32(boardSize) else { return false }
 
-            parsed.append(BookPosition(nextPlayer: np, moves: moves, children: children))
+        self.positionCount = data.readUInt32(at: 12)
+        self.moveCount = data.readUInt32(at: 16)
+        self.childCount = data.readUInt32(at: 20)
+        self.movePositionCount = data.readUInt32(at: 24)
+
+        // Compute table offsets
+        self.positionTableOffset = headerSize
+        self.movesTableOffset = positionTableOffset + Int(positionCount) * positionEntrySize
+        self.childrenTableOffset = movesTableOffset + Int(moveCount) * moveEntrySize
+        self.movePositionsTableOffset = childrenTableOffset + Int(childCount) * childEntrySize
+
+        // Validate data size
+        let expectedMinSize = movePositionsTableOffset + Int(movePositionCount)
+        guard data.count >= expectedMinSize else { return false }
+
+        self.bookData = data
+        return true
+    }
+
+    // MARK: - Binary accessors
+
+    /// Read position entry fields at the given position index.
+    private struct PositionEntry {
+        let nextPlayer: UInt8
+        let movesCount: UInt16
+        let movesStart: UInt32
+        let childrenCount: UInt16
+        let childrenStart: UInt32
+    }
+
+    private func readPosition(at index: Int) -> PositionEntry? {
+        guard let data = bookData, index >= 0, index < Int(positionCount) else { return nil }
+        let offset = positionTableOffset + index * positionEntrySize
+        return data.withUnsafeBytes { buf in
+            PositionEntry(
+                nextPlayer: buf.load(fromByteOffset: offset, as: UInt8.self),
+                movesCount: UInt16(littleEndian: buf.loadUnaligned(fromByteOffset: offset + 2, as: UInt16.self)),
+                movesStart: UInt32(littleEndian: buf.loadUnaligned(fromByteOffset: offset + 4, as: UInt32.self)),
+                childrenCount: UInt16(littleEndian: buf.loadUnaligned(fromByteOffset: offset + 8, as: UInt16.self)),
+                childrenStart: UInt32(littleEndian: buf.loadUnaligned(fromByteOffset: offset + 12, as: UInt32.self))
+            )
         }
+    }
 
-        return parsed
+    /// Read move entry fields at the given move index.
+    private struct MoveEntry {
+        let positionsStart: UInt32
+        let positionsCount: UInt8
+        let winLoss: Float
+        let sharpScore: Float
+        let adjustedVisits: Int64
+        let policyPrior: Float
+    }
+
+    private func readMove(at index: Int) -> MoveEntry? {
+        guard let data = bookData, index >= 0, index < Int(moveCount) else { return nil }
+        let offset = movesTableOffset + index * moveEntrySize
+        return data.withUnsafeBytes { buf in
+            MoveEntry(
+                positionsStart: UInt32(littleEndian: buf.loadUnaligned(fromByteOffset: offset, as: UInt32.self)),
+                positionsCount: buf.load(fromByteOffset: offset + 4, as: UInt8.self),
+                winLoss: Float(bitPattern: UInt32(littleEndian: buf.loadUnaligned(fromByteOffset: offset + 8, as: UInt32.self))),
+                sharpScore: Float(bitPattern: UInt32(littleEndian: buf.loadUnaligned(fromByteOffset: offset + 12, as: UInt32.self))),
+                adjustedVisits: Int64(littleEndian: buf.loadUnaligned(fromByteOffset: offset + 16, as: Int64.self)),
+                policyPrior: Float(bitPattern: UInt32(littleEndian: buf.loadUnaligned(fromByteOffset: offset + 24, as: UInt32.self)))
+            )
+        }
+    }
+
+    /// Read move position at the given index in the move positions table.
+    private func readMovePosition(at index: Int) -> UInt8? {
+        guard let data = bookData, index >= 0, index < Int(movePositionCount) else { return nil }
+        return data[movePositionsTableOffset + index]
+    }
+
+    /// Read child entry fields at the given child index.
+    private struct ChildEntry {
+        let canonicalPos: UInt8
+        let sym: UInt8
+        let childId: UInt32
+    }
+
+    private func readChild(at index: Int) -> ChildEntry? {
+        guard let data = bookData, index >= 0, index < Int(childCount) else { return nil }
+        let offset = childrenTableOffset + index * childEntrySize
+        return ChildEntry(
+            canonicalPos: data[offset],
+            sym: data[offset + 1],
+            childId: data.readUInt32(at: offset + 4)
+        )
+    }
+
+    /// Find child by canonical position using linear scan (avg ~2 children per position).
+    private func findChild(forPosition posEntry: PositionEntry, canonicalPos: Int) -> ChildEntry? {
+        let start = Int(posEntry.childrenStart)
+        let count = Int(posEntry.childrenCount)
+        for i in start..<(start + count) {
+            guard let child = readChild(at: i) else { continue }
+            if Int(child.canonicalPos) == canonicalPos {
+                return child
+            }
+        }
+        return nil
     }
 
     // MARK: - Gzip decompression
@@ -274,23 +474,22 @@ class BookLookup {
             canonicalPos = applyInverseSymmetry(displayPos, sym: accumulatedSymmetry)
         }
 
-        guard currentPositionId < positions.count else {
+        guard let posEntry = readPosition(at: currentPositionId) else {
             isInBook = false
             return
         }
-        let position = positions[currentPositionId]
 
-        guard let child = position.children[canonicalPos] else {
+        guard let child = findChild(forPosition: posEntry, canonicalPos: canonicalPos) else {
             isInBook = false
             justAdvanced = true
             return
         }
 
-        let newSym = compose(child.sym, accumulatedSymmetry)
-        currentPositionId = child.childId
+        let newSym = compose(Int(child.sym), accumulatedSymmetry)
+        currentPositionId = Int(child.childId)
         accumulatedSymmetry = newSym
 
-        if child.childId >= positions.count {
+        if child.childId >= positionCount {
             isInBook = false
         }
 
@@ -305,7 +504,7 @@ class BookLookup {
         guard isLoaded else { return }
         currentPositionId = 0
         accumulatedSymmetry = 0
-        isInBook = !positions.isEmpty
+        isInBook = positionCount > 0
     }
 
     /// Replay book state from a list of app BoardPoints (called after undo/forward/game switch).
@@ -325,40 +524,59 @@ class BookLookup {
 
     // MARK: - Display
 
-    private var bestMove: BookMove? {
-        currentPosition?.moves.first
+    /// Read the current position entry, or nil if not in book.
+    private var currentPositionEntry: PositionEntry? {
+        guard isInBook else { return nil }
+        return readPosition(at: currentPositionId)
     }
 
     /// Black winrate (0..1) for the best book move, or nil if not in book.
     var bestBlackWinrate: Float? {
-        guard let bestMove else { return nil }
-        return Float((1.0 - bestMove.winLoss) / 2.0)
+        guard let posEntry = currentPositionEntry, posEntry.movesCount > 0,
+              let bestMove = readMove(at: Int(posEntry.movesStart)) else { return nil }
+        return Float((1.0 - Double(bestMove.winLoss)) / 2.0)
     }
 
     /// Black score lead for the best book move, or nil if not in book.
     var bestBlackScore: Float? {
-        guard let bestMove else { return nil }
+        guard let posEntry = currentPositionEntry, posEntry.movesCount > 0,
+              let bestMove = readMove(at: Int(posEntry.movesStart)) else { return nil }
         return Float(-bestMove.sharpScore)
     }
 
-    var currentPosition: BookPosition? {
-        guard isInBook, currentPositionId < positions.count else { return nil }
-        return positions[currentPositionId]
+    /// The next player at the current position (1=black, 2=white), or nil if not in book.
+    var currentNextPlayer: Int? {
+        guard let posEntry = currentPositionEntry else { return nil }
+        return Int(posEntry.nextPlayer)
+    }
+
+    /// The number of moves at the current position, or nil if not in book.
+    var currentMovesCount: Int? {
+        guard let posEntry = currentPositionEntry else { return nil }
+        return Int(posEntry.movesCount)
     }
 
     func getBookAnalysis(boardWidth: Int, boardHeight: Int) -> [BoardPoint: BookMoveInfo] {
-        guard isInBook,
-              boardWidth == boardSize,
+        guard boardWidth == boardSize,
               boardHeight == boardSize,
-              currentPositionId < positions.count else {
+              let posEntry = currentPositionEntry else {
             return [:]
         }
 
-        let position = positions[currentPositionId]
         var result: [BoardPoint: BookMoveInfo] = [:]
 
-        for (rank, move) in position.moves.enumerated() {
-            for canonicalPos in move.positions {
+        let movesStart = Int(posEntry.movesStart)
+        let movesCount = Int(posEntry.movesCount)
+
+        for rank in 0..<movesCount {
+            guard let move = readMove(at: movesStart + rank) else { continue }
+
+            let posStart = Int(move.positionsStart)
+            let posCount = Int(move.positionsCount)
+
+            for j in 0..<posCount {
+                guard let posByte = readMovePosition(at: posStart + j) else { continue }
+                let canonicalPos = Int(posByte)
                 let isPass = canonicalPos >= boardSize * boardSize
 
                 let displayPos: Int
@@ -379,15 +597,51 @@ class BookLookup {
                 }
 
                 result[appPoint] = BookMoveInfo(
-                    winLoss: move.winLoss,
-                    sharpScore: move.sharpScore,
+                    winLoss: Double(move.winLoss),
+                    sharpScore: Double(move.sharpScore),
                     adjustedVisits: move.adjustedVisits,
-                    policyPrior: move.policyPrior,
+                    policyPrior: Double(move.policyPrior),
                     rank: rank
                 )
             }
         }
 
         return result
+    }
+}
+
+// MARK: - Data extension for reading little-endian values
+
+private extension Data {
+    func readUInt16(at offset: Int) -> UInt16 {
+        var value: UInt16 = 0
+        withUnsafeBytes { buffer in
+            value = buffer.loadUnaligned(fromByteOffset: offset, as: UInt16.self)
+        }
+        return UInt16(littleEndian: value)
+    }
+
+    func readUInt32(at offset: Int) -> UInt32 {
+        var value: UInt32 = 0
+        withUnsafeBytes { buffer in
+            value = buffer.loadUnaligned(fromByteOffset: offset, as: UInt32.self)
+        }
+        return UInt32(littleEndian: value)
+    }
+
+    func readInt64(at offset: Int) -> Int64 {
+        var value: Int64 = 0
+        withUnsafeBytes { buffer in
+            value = buffer.loadUnaligned(fromByteOffset: offset, as: Int64.self)
+        }
+        return Int64(littleEndian: value)
+    }
+
+    func readFloat32(at offset: Int) -> Float {
+        var bits: UInt32 = 0
+        withUnsafeBytes { buffer in
+            bits = buffer.loadUnaligned(fromByteOffset: offset, as: UInt32.self)
+        }
+        return Float(bitPattern: UInt32(littleEndian: bits))
     }
 }

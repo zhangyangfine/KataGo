@@ -38,9 +38,9 @@ if [ ! -f "$FP16M1_MLPACKAGE_RES" ]; then
     mv "$FP16M1_DIR" "$FP16M1_MLPACKAGE_RES"
 fi
 
-BOOK_GZ="book9x9jp-20260226.json.gz"
-BOOK_URL="https://github.com/ChinChangYang/KataGo/releases/download/v1.16.4-coreml1/book9x9jp-20260226.json.gz"
-BOOK_RES="../Resources/book9x9jp-20260226.json.gz"
+BOOK_GZ="book9x9jp-20260226.kbook.gz"
+BOOK_URL="https://github.com/ChinChangYang/KataGo/releases/download/v1.16.4-coreml1/book9x9jp-20260226.kbook.gz"
+BOOK_RES="../Resources/book9x9jp-20260226.kbook.gz"
 
 curl -L -o "$BOOK_GZ" "$BOOK_URL"
 cp -f "$BOOK_GZ" "$BOOK_RES"
