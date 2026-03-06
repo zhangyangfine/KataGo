@@ -378,10 +378,7 @@ class BookLookup {
         guard offset < data.count - 8 else { return nil }
 
         // Read uncompressed size from ISIZE (last 4 bytes, little-endian, mod 2^32)
-        let isize = Int(data[data.count - 4]) |
-                    (Int(data[data.count - 3]) << 8) |
-                    (Int(data[data.count - 2]) << 16) |
-                    (Int(data[data.count - 1]) << 24)
+        let isize = Int(data.readUInt32(at: data.count - 4))
 
         let deflateData = data[offset..<(data.count - 8)]
         // Use isize as hint, but allow larger (isize is mod 2^32)
@@ -403,7 +400,7 @@ class BookLookup {
             }
         }
 
-        guard decodedSize > 0 else { return nil }
+        guard decodedSize > 0, decodedSize < destCapacity else { return nil }
         result.count = decodedSize
         return result
     }
