@@ -8,7 +8,6 @@
 import Foundation
 import Compression
 import SwiftUI
-import os
 
 struct BookMoveInfo {
     let winLoss: Double
@@ -33,8 +32,6 @@ private let childEntrySize = 8
 @MainActor
 @Observable
 class BookLookup {
-    private nonisolated static let logger = Logger(subsystem: "com.chinchangyang.KataGo-iOS", category: "BookLookup")
-
     private(set) var isLoaded = false
     private(set) var isInBook = false
     private(set) var currentPositionId: Int = 0
@@ -187,7 +184,7 @@ class BookLookup {
 
     private func loadBook() async {
         guard let bundleURL = Bundle.main.url(forResource: "book9x9jp-20260226.kbook", withExtension: "gz") else {
-            Self.logger.error("Bundle URL not found for book9x9jp-20260226.kbook.gz")
+            printError("Bundle URL not found for book9x9jp-20260226.kbook.gz")
             return
         }
 
@@ -217,22 +214,24 @@ class BookLookup {
         let bundleMod = (try? fm.attributesOfItem(atPath: bundleURL.path)[.modificationDate] as? Date) ?? .distantPast
         let cacheMod = (try? fm.attributesOfItem(atPath: cachedURL.path)[.modificationDate] as? Date) ?? .distantPast
         if cacheMod >= bundleMod, let data = try? Data(contentsOf: cachedURL, options: .mappedIfSafe) {
+            #if !DEBUG
             // Validate cache isn't corrupted
             if data.count >= 4, data.readUInt32(at: 0) == kbookMagic {
                 return data
             }
+            #endif
             // Corrupted cache — fall through to re-decompress
-            logger.warning("Corrupted cache file detected, re-decompressing")
+            printError("Corrupted cache file detected, re-decompressing")
             try? FileManager.default.removeItem(at: cachedURL)
         }
 
         // Decompress from bundle
         guard let compressedData = try? Data(contentsOf: bundleURL) else {
-            logger.error("Failed to read compressed data from bundle")
+            printError("Failed to read compressed data from bundle")
             return nil
         }
         guard let decompressedData = decompressGzip(compressedData) else {
-            logger.error("Decompression failed for book data")
+            printError("Decompression failed for book data")
             return nil
         }
 
@@ -244,7 +243,7 @@ class BookLookup {
     /// Load binary book data and validate header. Returns true on success.
     private func loadFromData(_ data: Data) -> Bool {
         guard data.count >= headerSize else {
-            Self.logger.error("Book data truncated: \(data.count) bytes < \(headerSize) header size")
+            printError("Book data truncated: \(data.count) bytes < \(headerSize) header size")
             return false
         }
 
@@ -252,17 +251,17 @@ class BookLookup {
         let version = data.readUInt32(at: 4)
 
         guard magic == kbookMagic else {
-            Self.logger.error("Bad magic: 0x\(String(magic, radix: 16)), expected 0x\(String(kbookMagic, radix: 16))")
+            printError("Bad magic: 0x\(String(magic, radix: 16)), expected 0x\(String(kbookMagic, radix: 16))")
             return false
         }
         guard version == kbookVersion else {
-            Self.logger.error("Bad version: \(version), expected \(kbookVersion)")
+            printError("Bad version: \(version), expected \(kbookVersion)")
             return false
         }
 
         let boardSizeVal = data.readUInt32(at: 8)
         guard boardSizeVal == UInt32(boardSize) else {
-            Self.logger.error("Bad board size: \(boardSizeVal), expected \(self.boardSize)")
+            printError("Bad board size: \(boardSizeVal), expected \(self.boardSize)")
             return false
         }
 
@@ -280,7 +279,7 @@ class BookLookup {
         // Validate data size
         let expectedMinSize = movePositionsTableOffset + Int(movePositionCount)
         guard data.count >= expectedMinSize else {
-            Self.logger.error("Book data truncated: \(data.count) bytes < \(expectedMinSize) expected")
+            printError("Book data truncated: \(data.count) bytes < \(expectedMinSize) expected")
             return false
         }
 
@@ -386,7 +385,7 @@ class BookLookup {
               data[0] == 0x1f,
               data[1] == 0x8b,
               data[2] == 0x08 else {
-            logger.error("Invalid gzip header")
+            printError("Invalid gzip header")
             return nil
         }
 
@@ -412,7 +411,7 @@ class BookLookup {
         }
 
         guard offset < data.count - 8 else {
-            logger.error("Truncated gzip header fields at offset \(offset)")
+            printError("Truncated gzip header fields at offset \(offset)")
             return nil
         }
 
@@ -441,7 +440,7 @@ class BookLookup {
                 }
             }
             guard decodedSize > 0 else {
-                logger.error("Decompression failed (size=0)")
+                printError("Decompression failed (size=0)")
                 return nil
             }
             if decodedSize < capacity {
@@ -451,7 +450,7 @@ class BookLookup {
             // decodedSize == capacity: might be truncated, retry with larger buffer
             capacity *= 2
         }
-        logger.error("Decompression exceeded max capacity (\(maxCapacity) bytes)")
+        printError("Decompression exceeded max capacity (\(maxCapacity) bytes)")
         return nil
     }
 
