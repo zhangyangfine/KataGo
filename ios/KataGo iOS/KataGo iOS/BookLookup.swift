@@ -421,7 +421,7 @@ class BookLookup {
         let deflateData = data[offset..<(data.count - 8)]
         // Use isize as hint, but allow larger (isize is mod 2^32)
         var capacity = max(isize, deflateData.count * 4)
-        let maxCapacity = 256 * 1024 * 1024  // 256 MB safety limit
+        let maxCapacity = 1024 * 1024 * 1024  // 1 GB safety limit
 
         guard capacity > 0 else { return nil }
 
