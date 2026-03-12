@@ -217,7 +217,7 @@ struct StatusToolbarItems: View {
     var eyeForegroundStyle: Color {
         switch gobanState.eyeStatus {
         case .opened: .primary
-        case .book: .accentColor
+        case .book: .primary
         case .closed: .red
         }
     }

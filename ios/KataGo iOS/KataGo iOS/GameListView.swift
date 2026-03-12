@@ -18,7 +18,7 @@ struct GameLinksView: View {
         _selectedGameRecord = selectedGameRecord
 
         let predicate = #Predicate<GameRecord> {
-            searchText.isEmpty || $0.name.contains(searchText)
+            searchText.isEmpty || $0.name.localizedStandardContains(searchText)
         }
 
         _gameRecords = Query(filter: predicate,
