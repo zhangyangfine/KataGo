@@ -153,6 +153,9 @@ struct NameConfigView: View {
 
 struct RuleConfigView: View {
     var config: Config
+    var maxBoardLength: Int
+    var gameRecord: GameRecord
+
     @State var isBoardSizeChanged: Bool = false
     @State var isRuleChanged: Bool = false
     @State var boardWidth: Int = -1
@@ -165,10 +168,13 @@ struct RuleConfigView: View {
     @State var whiteHandicapBonusRuleText: String = Config.defaultWhiteHandicapBonusRuleText
     @State var komi: Float = Config.defaultKomi
     @State var komiText: String = String(Config.defaultKomi)
+
     @Environment(MessageList.self) var messageList
     @Environment(Turn.self) var player
     @Environment(GobanState.self) var gobanState
-    var maxBoardLength: Int
+    @Environment(BoardSize.self) var board
+    @Environment(Stones.self) var stones
+    @Environment(BookLookup.self) var bookLookup
 
     var body: some View {
         List {
@@ -297,6 +303,17 @@ struct RuleConfigView: View {
                 player.nextColorForPlayCommand = .unknown
                 messageList.appendAndSend(command: config.getKataBoardSizeCommand())
                 gobanState.sendShowBoardCommand(messageList: messageList)
+            } else if isRuleChanged {
+                // The "printsgf" will trigger the app to save the printed sgf to the game record, so this ensures the printed sgf contains all moves.
+                gobanState.forwardMoves(
+                    limit: nil,
+                    gameRecord: gameRecord,
+                    board: board,
+                    messageList: messageList,
+                    player: player,
+                    audioModel: nil,
+                    stones: stones
+                )
             }
 
             if isBoardSizeChanged || isRuleChanged {
@@ -691,8 +708,12 @@ struct ConfigItems: View {
             }
 
             NavigationLink("Rule") {
-                RuleConfigView(config: config, maxBoardLength: maxBoardLength)
-                    .navigationTitle("Rule")
+                RuleConfigView(
+                    config: config,
+                    maxBoardLength: maxBoardLength,
+                    gameRecord: gameRecord
+                )
+                .navigationTitle("Rule")
             }
 
             NavigationLink("Analysis") {
