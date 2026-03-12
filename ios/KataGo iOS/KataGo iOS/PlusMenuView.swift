@@ -103,7 +103,8 @@ struct PlusMenuView: View {
                 }
             }
         } label: {
-            Image(systemName: "ellipsis.circle")
+            Label("More", systemImage: "ellipsis.circle")
+                .labelStyle(.iconOnly)
         }
         .sheet(isPresented: $showingConfig) {
             if let gameRecord {

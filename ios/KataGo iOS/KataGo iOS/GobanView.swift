@@ -41,11 +41,13 @@ struct GobanView: View {
                                 HStack {
 #if os(visionOS)
                                     Button(action: toggleFullScreen) {
-                                        Image(
-                                            systemName: (columnVisibility == .all)
-                                            ? "arrow.up.left.and.arrow.down.right"
-                                            : "arrow.down.right.and.arrow.up.left"
+                                        Label(
+                                            columnVisibility == .all ? "Expand" : "Collapse",
+                                            systemImage: columnVisibility == .all
+                                                ? "arrow.up.left.and.arrow.down.right"
+                                                : "arrow.down.right.and.arrow.up.left"
                                         )
+                                        .labelStyle(.iconOnly)
                                     }
                                     .scaledToFit()
 #endif

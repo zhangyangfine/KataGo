@@ -44,17 +44,20 @@ struct StatusToolbarItems: View {
     }
 
     func createButton(action: @escaping @MainActor () -> Void,
+                      label: String,
                       systemImage: String) -> some View {
         Group {
 #if os(visionOS)
             // visionOS doesn't support glass button style
             Button(action: action) {
-                Image(systemName: systemImage)
+                Label(label, systemImage: systemImage)
+                    .labelStyle(.iconOnly)
                     .foregroundStyle(foregroundStyle)
             }
 #else
             Button(action: action) {
-                Image(systemName: systemImage)
+                Label(label, systemImage: systemImage)
+                    .labelStyle(.iconOnly)
                     .foregroundStyle(foregroundStyle)
             }
             .buttonStyle(.glass)
@@ -63,16 +66,19 @@ struct StatusToolbarItems: View {
     }
 
     func createButton(action: @escaping @MainActor () -> Void,
+                      label: String,
                       image: some View) -> some View {
         Group {
 #if os(visionOS)
             // visionOS doesn't support glass button style
             Button(action: action) {
-                image
+                Label { Text(label) } icon: { image }
+                    .labelStyle(.iconOnly)
             }
 #else
             Button(action: action) {
-                image
+                Label { Text(label) } icon: { image }
+                    .labelStyle(.iconOnly)
             }
             .buttonStyle(.glass)
 #endif
@@ -83,21 +89,25 @@ struct StatusToolbarItems: View {
         HStack(spacing: spacing) {
             createButton(
                 action: backwardEndAction,
+                label: "Backward to End",
                 systemImage: "backward.end"
             )
 
             createButton(
                 action: backwardAction,
+                label: "Backward",
                 systemImage: "backward"
             )
 
             createButton(
                 action: backwardFrameAction,
+                label: "Backward Frame",
                 systemImage: "backward.frame"
             )
 
             createButton(
                 action: sparkleAction,
+                label: "Toggle Analysis",
                 image:
                     Image((gobanState.analysisStatus == .clear) ? "custom.sparkle.slash" : "custom.sparkle")
                     .symbolEffect(.variableColor.iterative.reversing, isActive: gobanState.analysisStatus == .run)
@@ -107,6 +117,7 @@ struct StatusToolbarItems: View {
 
             createButton(
                 action: eyeAction,
+                label: "Toggle Visibility",
                 image:
                     Image(systemName: eyeIconName)
             )
@@ -115,16 +126,19 @@ struct StatusToolbarItems: View {
 
             createButton(
                 action: forwardFrameAction,
+                label: "Forward Frame",
                 systemImage: "forward.frame"
             )
 
             createButton(
                 action: forwardAction,
+                label: "Forward",
                 systemImage: "forward"
             )
 
             createButton(
                 action: forwardEndAction,
+                label: "Forward to End",
                 systemImage: "forward.end"
             )
         }

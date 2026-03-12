@@ -32,7 +32,8 @@ struct TopToolbarView: ToolbarContent {
                         gobanState.isEditing.toggle()
                     }
                 } label: {
-                    Image(systemName: gobanState.isEditing ? "lock.open" : "lock")
+                    Label(gobanState.isEditing ? "Unlock" : "Lock", systemImage: gobanState.isEditing ? "lock.open" : "lock")
+                        .labelStyle(.iconOnly)
                         .foregroundStyle(gobanState.isAutoPlaying ? .secondary : .primary)
                 }
             }
@@ -43,13 +44,9 @@ struct TopToolbarView: ToolbarContent {
                         gobanState.deactivateBranch()
                     }
                 } label: {
-                    if !gobanState.shouldGenMove(config: config, player: player) {
-                        Image(systemName: "arrow.uturn.backward.circle")
-                            .foregroundStyle(.red)
-                    } else {
-                        Image(systemName: "arrow.uturn.backward.circle")
-                            .foregroundStyle(.secondary)
-                    }
+                    Label("Deactivate Branch", systemImage: "arrow.uturn.backward.circle")
+                        .labelStyle(.iconOnly)
+                        .foregroundStyle(gobanState.shouldGenMove(config: config, player: player) ? Color.secondary : Color.red)
                 }
             }
         }

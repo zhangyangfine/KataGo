@@ -16,7 +16,8 @@ struct QuitButton: View {
         Button(role: .destructive) {
             isConfirming = true
         } label: {
-            Image(systemName: "rectangle.portrait.and.arrow.forward")
+            Label("Quit", systemImage: "rectangle.portrait.and.arrow.forward")
+                .labelStyle(.iconOnly)
                 .foregroundStyle(.red)
         }
         .confirmationDialog(
