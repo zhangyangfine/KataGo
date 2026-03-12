@@ -171,13 +171,7 @@ final class Config {
 
 extension Config {
     var isBookCompatible: Bool {
-        boardWidth == 9 && boardHeight == 9 && komi == 6.0
-        && koRule == .simple
-        && scoringRule == .territory
-        && taxRule == .seki
-        && !multiStoneSuicideLegal
-        && !hasButton
-        && whiteHandicapBonusRule == .zero
+        boardWidth == 9 && boardHeight == 9
     }
 }
 
