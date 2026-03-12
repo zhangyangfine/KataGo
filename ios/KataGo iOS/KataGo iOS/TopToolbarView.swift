@@ -28,26 +28,23 @@ struct TopToolbarView: ToolbarContent {
 
             ToolbarItem(id: "lock") {
                 Button {
-                    if !gobanState.isAutoPlaying {
-                        gobanState.isEditing.toggle()
-                    }
+                    gobanState.isEditing.toggle()
                 } label: {
                     Label(gobanState.isEditing ? "Unlock" : "Lock", systemImage: gobanState.isEditing ? "lock.open" : "lock")
                         .labelStyle(.iconOnly)
-                        .foregroundStyle(gobanState.isAutoPlaying ? .secondary : .primary)
                 }
+                .disabled(gobanState.isAutoPlaying)
             }
         } else if let config = gameRecord.config {
             ToolbarItem(id: "arrow.uturn.backward.circle") {
                 Button {
-                    if !gobanState.shouldGenMove(config: config, player: player) {
-                        gobanState.deactivateBranch()
-                    }
+                    gobanState.deactivateBranch()
                 } label: {
                     Label("Deactivate Branch", systemImage: "arrow.uturn.backward.circle")
                         .labelStyle(.iconOnly)
-                        .foregroundStyle(gobanState.shouldGenMove(config: config, player: player) ? Color.secondary : Color.red)
                 }
+                .tint(.red)
+                .disabled(gobanState.shouldGenMove(config: config, player: player))
             }
         }
     }
@@ -82,3 +79,20 @@ struct TopToolbarView: ToolbarContent {
     .environment(ThumbnailModel())
     .environment(TopUIState())
 }
+#Preview("Branch Active") {
+    let gobanState = GobanState()
+    gobanState.branchSgf = "(;GM[1]FF[4]SZ[19])"
+    gobanState.branchIndex = 0
+    return NavigationStack {
+        Text("Toolbar Preview - Branch Active")
+            .toolbar {
+                TopToolbarView(gameRecord: GameRecord(config: Config()), maxBoardLength: 19)
+            }
+    }
+    .environment(NavigationContext())
+    .environment(gobanState)
+    .environment(Turn())
+    .environment(ThumbnailModel())
+    .environment(TopUIState())
+}
+
