@@ -759,24 +759,22 @@ struct GlobalSettingsView: View {
     @Environment(GobanState.self) private var gobanState
 
     var body: some View {
-        NavigationStack {
-            List {
-                ConfigBoolItem(title: "Sound effect", value: $soundEffect)
-                    .onAppear {
-                        soundEffect = gobanState.soundEffect
-                    }
-                    .onChange(of: soundEffect) {
-                        gobanState.soundEffect = soundEffect
-                    }
+        List {
+            ConfigBoolItem(title: "Sound effect", value: $soundEffect)
+                .onAppear {
+                    soundEffect = gobanState.soundEffect
+                }
+                .onChange(of: soundEffect) {
+                    gobanState.soundEffect = soundEffect
+                }
 
-                ConfigBoolItem(title: "Haptic feedback", value: $hapticFeedback)
-                    .onAppear {
-                        hapticFeedback = gobanState.hapticFeedback
-                    }
-                    .onChange(of: hapticFeedback) {
-                        gobanState.hapticFeedback = hapticFeedback
-                    }
-            }
+            ConfigBoolItem(title: "Haptic feedback", value: $hapticFeedback)
+                .onAppear {
+                    hapticFeedback = gobanState.hapticFeedback
+                }
+                .onChange(of: hapticFeedback) {
+                    gobanState.hapticFeedback = hapticFeedback
+                }
         }
         .navigationTitle("Global Settings")
     }
@@ -787,10 +785,8 @@ struct GameSettingsView: View {
     var maxBoardLength: Int
 
     var body: some View {
-        NavigationStack {
-            ConfigItems(gameRecord: gameRecord, maxBoardLength: maxBoardLength)
-        }
-        .navigationTitle("Game Settings")
+        ConfigItems(gameRecord: gameRecord, maxBoardLength: maxBoardLength)
+            .navigationTitle("Game Settings")
     }
 }
 
@@ -799,15 +795,13 @@ struct ConfigView: View {
     var maxBoardLength: Int
 
     var body: some View {
-        NavigationStack {
-            List {
-                NavigationLink("Global Settings") {
-                    GlobalSettingsView()
-                }
+        List {
+            NavigationLink("Global Settings") {
+                GlobalSettingsView()
+            }
 
-                NavigationLink("Game Settings") {
-                    GameSettingsView(gameRecord: gameRecord, maxBoardLength: maxBoardLength)
-                }
+            NavigationLink("Game Settings") {
+                GameSettingsView(gameRecord: gameRecord, maxBoardLength: maxBoardLength)
             }
         }
         .navigationTitle("Configurations")

@@ -15,6 +15,8 @@ struct PlusMenuView: View {
     @Environment(GobanState.self) var gobanState
     @Environment(ThumbnailModel.self) var thumbnailModel
     @Environment(TopUIState.self) var topUIState
+    @State private var showingConfig = false
+    @State private var showingDeveloper = false
 
     var body: some View {
         Menu {
@@ -88,25 +90,34 @@ struct PlusMenuView: View {
                 Divider()
 #endif
 
-                NavigationStack {
-                    NavigationLink(
-                        destination: ConfigView(
-                            gameRecord: gameRecord,
-                            maxBoardLength: maxBoardLength
-                        )
-                    ) {
-                        Label("Configurations", systemImage: "gearshape")
-                    }
-                    .buttonStyle(.automatic)
+                Button {
+                    showingConfig = true
+                } label: {
+                    Label("Configurations", systemImage: "gearshape")
+                }
 
-                    NavigationLink(destination: CommandView(config: gameRecord.concreteConfig)) {
-                        Label("Developer Mode", systemImage: "doc.plaintext")
-                    }
-                    .buttonStyle(.automatic)
+                Button {
+                    showingDeveloper = true
+                } label: {
+                    Label("Developer Mode", systemImage: "doc.plaintext")
                 }
             }
         } label: {
             Image(systemName: "ellipsis.circle")
+        }
+        .sheet(isPresented: $showingConfig) {
+            if let gameRecord {
+                NavigationStack {
+                    ConfigView(gameRecord: gameRecord, maxBoardLength: maxBoardLength)
+                }
+            }
+        }
+        .sheet(isPresented: $showingDeveloper) {
+            if let gameRecord {
+                NavigationStack {
+                    CommandView(config: gameRecord.concreteConfig)
+                }
+            }
         }
     }
 }
