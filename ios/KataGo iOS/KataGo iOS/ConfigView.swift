@@ -318,6 +318,15 @@ struct RuleConfigView: View {
 
             if isBoardSizeChanged || isRuleChanged {
                 messageList.appendAndSend(command: "printsgf")
+
+                if config.isBookCompatible && gobanState.eyeStatus == .opened {
+                    bookLookup.loadIfNeeded()
+                    gobanState.eyeStatus = .book
+                }
+
+                if !config.isBookCompatible && gobanState.eyeStatus == .book {
+                    gobanState.eyeStatus = .opened
+                }
             }
         }
     }
