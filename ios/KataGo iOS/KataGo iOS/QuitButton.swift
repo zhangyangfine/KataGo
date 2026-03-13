@@ -18,8 +18,8 @@ struct QuitButton: View {
         } label: {
             Label("Quit", systemImage: "rectangle.portrait.and.arrow.forward")
                 .labelStyle(.iconOnly)
-                .foregroundStyle(.red)
         }
+        .tint(.red)
         .confirmationDialog(
             "Are you sure you want to quit? This will close KataGo model and go back to the model selection screen.",
             isPresented: $isConfirming,
