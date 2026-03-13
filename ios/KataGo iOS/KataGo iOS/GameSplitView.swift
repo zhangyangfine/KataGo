@@ -112,6 +112,19 @@ struct GameSplitView: View {
                     gobanState.clearPendingMove()
                 }
             }
+            .confirmationDialog(
+                "Are you sure you want to restore the game position? This will discard the current branch.",
+                isPresented: $gobanState.confirmingBranchDeactivation,
+                titleVisibility: .visible
+            ) {
+                Button("Restore", role: .destructive) {
+                    gobanState.deactivateBranch()
+                }
+
+                Button("Cancel", role: .cancel) {
+                    gobanState.confirmingBranchDeactivation = false
+                }
+            }
         }
         .onAppear {
             gobanState.soundEffect = globalSoundEffect

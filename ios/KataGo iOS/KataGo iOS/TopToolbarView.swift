@@ -38,7 +38,7 @@ struct TopToolbarView: ToolbarContent {
         } else if let config = gameRecord.config {
             ToolbarItem(id: "arrow.uturn.backward.circle") {
                 Button {
-                    gobanState.deactivateBranch()
+                    gobanState.confirmingBranchDeactivation = true
                 } label: {
                     Label("Deactivate Branch", systemImage: "arrow.uturn.backward.circle")
                         .labelStyle(.iconOnly)
