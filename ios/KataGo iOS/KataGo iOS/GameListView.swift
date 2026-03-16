@@ -10,20 +10,28 @@ import SwiftData
 
 struct GameLinksView: View {
     @Binding var selectedGameRecord: GameRecord?
+    @Binding var searchText: String
     @Query var gameRecords: [GameRecord]
     @Environment(\.modelContext) private var modelContext
 
-    init(selectedGameRecord: Binding<GameRecord?>,
-         searchText: String) {
-        _selectedGameRecord = selectedGameRecord
+    private var isSearchActive: Bool { !searchText.isEmpty }
 
+    init(selectedGameRecord: Binding<GameRecord?>,
+         searchText: Binding<String>) {
+        _selectedGameRecord = selectedGameRecord
+        _searchText = searchText
+
+        let searchTextValue = searchText.wrappedValue
         let predicate = #Predicate<GameRecord> {
-            searchText.isEmpty || $0.name.localizedStandardContains(searchText)
+            searchTextValue.isEmpty || $0.name.localizedStandardContains(searchTextValue)
         }
 
-        _gameRecords = Query(filter: predicate,
-                             sort: \GameRecord.lastModificationDate,
-                             order: .reverse)
+        let descriptor = FetchDescriptor<GameRecord>(
+            predicate: predicate,
+            sortBy: [SortDescriptor(\.lastModificationDate, order: .reverse)]
+        )
+
+        _gameRecords = Query(descriptor)
     }
 
     var body: some View {
@@ -34,13 +42,17 @@ struct GameLinksView: View {
         }
         .onDelete { indexSet in
             for index in indexSet {
-                let gameRecordToDelete = gameRecords[index]
-                if selectedGameRecord?.persistentModelID == gameRecordToDelete.persistentModelID {
+                let record = gameRecords[index]
+                if selectedGameRecord?.persistentModelID == record.persistentModelID {
                     selectedGameRecord = nil
                 }
-
-                modelContext.safelyDelete(gameRecord: gameRecordToDelete)
+                modelContext.safelyDelete(gameRecord: record)
             }
+        }
+
+        if isSearchActive {
+            Button("More...") { searchText = "" }
+                .tint(.primary)
         }
     }
 }
@@ -55,7 +67,7 @@ struct GameListView: View {
     var body: some View {
         List(selection: $selectedGameRecord) {
             GameLinksView(selectedGameRecord: $selectedGameRecord,
-                          searchText: searchText)
+                          searchText: $searchText)
         }
         .navigationTitle("Games")
         .sheet(isPresented: $isEditorPresented) {
@@ -98,4 +110,32 @@ extension ModelContext {
             }
         }
     }
+}
+
+#Preview {
+    @Previewable @State var isEditorPresented = false
+    @Previewable @State var selectedGameRecord: GameRecord? = nil
+    @Previewable @State var isGameListViewAppeared = false
+
+    let container: ModelContainer = {
+        let schema = Schema([GameRecord.self])
+        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        let container = try! ModelContainer(for: schema, configurations: [config])
+        let context = container.mainContext
+        let record1 = GameRecord.createGameRecord(name: "Game 1")
+        let record2 = GameRecord.createGameRecord(name: "Game 2")
+        context.insert(record1)
+        context.insert(record2)
+        return container
+    }()
+
+    NavigationStack {
+        GameListView(
+            isEditorPresented: $isEditorPresented,
+            selectedGameRecord: $selectedGameRecord,
+            isGameListViewAppeared: $isGameListViewAppeared
+        )
+    }
+    .environment(ThumbnailModel())
+    .modelContainer(container)
 }
