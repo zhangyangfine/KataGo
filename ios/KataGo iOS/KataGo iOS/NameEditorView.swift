@@ -46,5 +46,9 @@ struct NameEditorView: View {
                 }
             }
         }
+        #if os(macOS)
+        .frame(minWidth: 300, minHeight: 80)
+        .padding()
+        #endif
     }
 }

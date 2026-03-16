@@ -111,6 +111,9 @@ struct PlusMenuView: View {
                 NavigationStack {
                     ConfigView(gameRecord: gameRecord, maxBoardLength: maxBoardLength)
                 }
+                #if os(macOS)
+                .frame(minWidth: 500, minHeight: 600)
+                #endif
             }
         }
         .sheet(isPresented: $showingDeveloper) {
@@ -118,6 +121,9 @@ struct PlusMenuView: View {
                 NavigationStack {
                     CommandView(config: gameRecord.concreteConfig)
                 }
+                #if os(macOS)
+                .frame(minWidth: 500, minHeight: 400)
+                #endif
             }
         }
     }
