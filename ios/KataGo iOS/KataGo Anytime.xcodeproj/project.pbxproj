@@ -272,15 +272,15 @@
 		E19D2E362AC8E5DB00C2A807 /* KataGoModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E19D2E352AC8E5DB00C2A807 /* KataGoModel.swift */; };
 		E19D2E382AC97FA300C2A807 /* StatusToolbarItems.swift in Sources */ = {isa = PBXBuildFile; fileRef = E19D2E372AC97FA300C2A807 /* StatusToolbarItems.swift */; };
 		E1A143AC2E80FAD200FAA1BF /* QuitButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A143AB2E80FAD200FAA1BF /* QuitButton.swift */; };
+		E1A2B3C52F0A1B2C00AABB01 /* BookLookup.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A2B3C42F0A1B2C00AABB01 /* BookLookup.swift */; };
+		E1A2B3C72F0A1B2C00AABB02 /* BookAnalysisView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A2B3C62F0A1B2C00AABB02 /* BookAnalysisView.swift */; };
+		E1A2B3C92F0A1B2C00AABB03 /* book9x9jp-20260226.kbook.gz in Resources */ = {isa = PBXBuildFile; fileRef = E1A2B3C82F0A1B2C00AABB03 /* book9x9jp-20260226.kbook.gz */; };
 		E1AFE0532C3C07E00061D724 /* SgfCpp.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E1AFE0512C3C07E00061D724 /* SgfCpp.cpp */; };
 		E1AFE0542C3C07E00061D724 /* SgfCpp.hpp in Headers */ = {isa = PBXBuildFile; fileRef = E1AFE0522C3C07E00061D724 /* SgfCpp.hpp */; settings = {ATTRIBUTES = (Public, ); }; };
 		E1AFE0562C3C2E8D0061D724 /* SgfHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1AFE0552C3C2E8D0061D724 /* SgfHelper.swift */; };
 		E1B0ED912C7DFEBC009DDC25 /* PlusMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B0ED902C7DFEBC009DDC25 /* PlusMenuView.swift */; };
 		E1B0ED962C7E1246009DDC25 /* FastTestPlan.xctestplan in Resources */ = {isa = PBXBuildFile; fileRef = E1B0ED952C7E1246009DDC25 /* FastTestPlan.xctestplan */; };
 		E1B0ED982C7E128A009DDC25 /* FullTestPlan.xctestplan in Resources */ = {isa = PBXBuildFile; fileRef = E1B0ED972C7E128A009DDC25 /* FullTestPlan.xctestplan */; };
-		E1A2B3C52F0A1B2C00AABB01 /* BookLookup.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A2B3C42F0A1B2C00AABB01 /* BookLookup.swift */; };
-		E1A2B3C72F0A1B2C00AABB02 /* BookAnalysisView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A2B3C62F0A1B2C00AABB02 /* BookAnalysisView.swift */; };
-		E1A2B3C92F0A1B2C00AABB03 /* book9x9jp-20260226.kbook.gz in Resources */ = {isa = PBXBuildFile; fileRef = E1A2B3C82F0A1B2C00AABB03 /* book9x9jp-20260226.kbook.gz */; };
 		E1B63BE42AABDF3500094965 /* BoardLineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B63BE32AABDF3500094965 /* BoardLineView.swift */; };
 		E1B675262C95B42C0043E527 /* GameEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B675252C95B42C0043E527 /* GameEntity.swift */; };
 		E1B675282C95C1430043E527 /* GetGameInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B675272C95C1430043E527 /* GetGameInfo.swift */; };
@@ -293,6 +293,7 @@
 		E1C682752AA2CC31001B4F44 /* CommandView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C682742AA2CC31001B4F44 /* CommandView.swift */; };
 		E1C6D0C72CDF0E38002C1921 /* GameLinkView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C6D0C62CDF0E38002C1921 /* GameLinkView.swift */; };
 		E1D7D3AD2AA897C000556DFB /* StoneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1D7D3AC2AA897C000556DFB /* StoneView.swift */; };
+		E1D7D3AE2AA897C000556DFB /* Shaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = E1D7D3AF2AA897C000556DFB /* Shaders.metal */; };
 		E1D7D3B32AAA1F5600556DFB /* AnalysisView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1D7D3B22AAA1F5600556DFB /* AnalysisView.swift */; };
 		E1E1717E2AB9DAED004DCC3C /* ConfigView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1E1717D2AB9DAED004DCC3C /* ConfigView.swift */; };
 /* End PBXBuildFile section */
@@ -627,15 +628,15 @@
 		E19D2E352AC8E5DB00C2A807 /* KataGoModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KataGoModel.swift; sourceTree = "<group>"; };
 		E19D2E372AC97FA300C2A807 /* StatusToolbarItems.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusToolbarItems.swift; sourceTree = "<group>"; };
 		E1A143AB2E80FAD200FAA1BF /* QuitButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuitButton.swift; sourceTree = "<group>"; };
+		E1A2B3C42F0A1B2C00AABB01 /* BookLookup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookLookup.swift; sourceTree = "<group>"; };
+		E1A2B3C62F0A1B2C00AABB02 /* BookAnalysisView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookAnalysisView.swift; sourceTree = "<group>"; };
+		E1A2B3C82F0A1B2C00AABB03 /* book9x9jp-20260226.kbook.gz */ = {isa = PBXFileReference; lastKnownFileType = archive.gzip; path = "book9x9jp-20260226.kbook.gz"; sourceTree = "<group>"; };
 		E1AFE0512C3C07E00061D724 /* SgfCpp.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = SgfCpp.cpp; sourceTree = "<group>"; };
 		E1AFE0522C3C07E00061D724 /* SgfCpp.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = SgfCpp.hpp; sourceTree = "<group>"; };
 		E1AFE0552C3C2E8D0061D724 /* SgfHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SgfHelper.swift; sourceTree = "<group>"; };
 		E1B0ED902C7DFEBC009DDC25 /* PlusMenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlusMenuView.swift; sourceTree = "<group>"; };
 		E1B0ED952C7E1246009DDC25 /* FastTestPlan.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = FastTestPlan.xctestplan; sourceTree = "<group>"; };
 		E1B0ED972C7E128A009DDC25 /* FullTestPlan.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = FullTestPlan.xctestplan; sourceTree = "<group>"; };
-		E1A2B3C42F0A1B2C00AABB01 /* BookLookup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookLookup.swift; sourceTree = "<group>"; };
-		E1A2B3C62F0A1B2C00AABB02 /* BookAnalysisView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookAnalysisView.swift; sourceTree = "<group>"; };
-		E1A2B3C82F0A1B2C00AABB03 /* book9x9jp-20260226.kbook.gz */ = {isa = PBXFileReference; lastKnownFileType = archive.gzip; path = "book9x9jp-20260226.kbook.gz"; sourceTree = "<group>"; };
 		E1B63BE32AABDF3500094965 /* BoardLineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardLineView.swift; sourceTree = "<group>"; };
 		E1B675252C95B42C0043E527 /* GameEntity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameEntity.swift; sourceTree = "<group>"; };
 		E1B675272C95C1430043E527 /* GetGameInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GetGameInfo.swift; sourceTree = "<group>"; };
@@ -650,6 +651,7 @@
 		E1C6D0C62CDF0E38002C1921 /* GameLinkView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameLinkView.swift; sourceTree = "<group>"; };
 		E1CF18DD2CAA0D7D009F0154 /* KataGo iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "KataGo iOS.entitlements"; sourceTree = "<group>"; };
 		E1D7D3AC2AA897C000556DFB /* StoneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoneView.swift; sourceTree = "<group>"; };
+		E1D7D3AF2AA897C000556DFB /* Shaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Shaders.metal; sourceTree = "<group>"; };
 		E1D7D3B22AAA1F5600556DFB /* AnalysisView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalysisView.swift; sourceTree = "<group>"; };
 		E1E1717D2AB9DAED004DCC3C /* ConfigView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -1052,6 +1054,7 @@
 				E14FBF832C8F300C00C702BE /* PlayView.swift */,
 				E1B0ED902C7DFEBC009DDC25 /* PlusMenuView.swift */,
 				E1A143AB2E80FAD200FAA1BF /* QuitButton.swift */,
+				E1D7D3AF2AA897C000556DFB /* Shaders.metal */,
 				E19D2E372AC97FA300C2A807 /* StatusToolbarItems.swift */,
 				E1D7D3AC2AA897C000556DFB /* StoneView.swift */,
 				E138288E2C6A436700670FD3 /* TopToolbarView.swift */,
@@ -1699,6 +1702,7 @@
 				E12A6E9F2C322E020002DED0 /* ConfigModel.swift in Sources */,
 				E12A6EA12C325E010002DED0 /* WinrateBarView.swift in Sources */,
 				E1D7D3AD2AA897C000556DFB /* StoneView.swift in Sources */,
+				E1D7D3AE2AA897C000556DFB /* Shaders.metal in Sources */,
 				E15F54872C94427C00A698D0 /* KataGoShortcuts.swift in Sources */,
 				E13A9ACE2D9A42B6002A367C /* ThumbnailModel.swift in Sources */,
 				E138288F2C6A436700670FD3 /* TopToolbarView.swift in Sources */,

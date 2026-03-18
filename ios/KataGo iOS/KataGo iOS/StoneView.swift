@@ -48,42 +48,19 @@ struct StoneView: View {
                   y: dimensions.capturedStonesStartY)
     }
 
-    private func drawStoneBase(stoneColor: Color, x: Int, y: CGFloat, dimensions: Dimensions) -> some View {
+    private func drawClassicStone(x: Int, y: CGFloat, r: Float, g: Float, b: Float, dimensions: Dimensions) -> some View {
         Circle()
-            .foregroundStyle(stoneColor)
+            .colorEffect(ShaderLibrary.stone(
+                .float(Float(dimensions.stoneLength)),
+                .float3(r, g, b)
+            ))
             .frame(width: dimensions.stoneLength, height: dimensions.stoneLength)
             .position(x: dimensions.boardLineStartX + CGFloat(x) * dimensions.squareLength,
                       y: dimensions.boardLineStartY + y * dimensions.squareLength)
-    }
-
-    private func drawLightEffect(stoneColor: Color, x: Int, y: CGFloat, dimensions: Dimensions) -> some View {
-        Circle()
-            .fill(RadialGradient(gradient: Gradient(colors: [stoneColor, Color.white, Color.white]), center: .center, startRadius: dimensions.squareLengthDiv4, endRadius: 0))
-            .offset(x: -dimensions.squareLengthDiv8, y: -dimensions.squareLengthDiv8)
-            .padding(dimensions.squareLengthDiv4)
-            .frame(width: dimensions.stoneLength, height: dimensions.stoneLength)
-            .position(x: dimensions.boardLineStartX + CGFloat(x) * dimensions.squareLength,
-                      y: dimensions.boardLineStartY + y * dimensions.squareLength)
-            .overlay {
-                // Mask some light
-                Circle()
-                    .foregroundStyle(stoneColor)
-                    .blur(radius: dimensions.squareLengthDiv16)
-                    .frame(width: dimensions.squareLengthDiv2, height: dimensions.squareLengthDiv2)
-                    .position(x: dimensions.boardLineStartX + CGFloat(x) * dimensions.squareLength,
-                              y: dimensions.boardLineStartY + y * dimensions.squareLength)
-            }
     }
 
     private func drawBlackStone(x: Int, y: CGFloat, dimensions: Dimensions) -> some View {
-
-        ZStack {
-            // Black stone
-            drawStoneBase(stoneColor: .black, x: x, y: y, dimensions: dimensions)
-
-            // Light source effect
-            drawLightEffect(stoneColor: .black, x: x, y: y, dimensions: dimensions)
-        }
+        drawClassicStone(x: x, y: y, r: 0, g: 0, b: 0, dimensions: dimensions)
     }
 
     private func drawBlackStones(dimensions: Dimensions) -> some View {
@@ -95,17 +72,7 @@ struct StoneView: View {
     }
 
     private func drawWhiteStone(x: Int, y: CGFloat, dimensions: Dimensions) -> some View {
-
-        ZStack {
-            // Make a white stone darker than light
-            let stoneColor = Color(white: 0.9)
-
-            // White stone
-            drawStoneBase(stoneColor: stoneColor, x: x, y: y, dimensions: dimensions)
-
-            // Light source effect
-            drawLightEffect(stoneColor: stoneColor, x: x, y: y, dimensions: dimensions)
-        }
+        drawClassicStone(x: x, y: y, r: 0.9, g: 0.9, b: 0.9, dimensions: dimensions)
     }
 
     private func drawWhiteStones(dimensions: Dimensions) -> some View {
@@ -215,6 +182,7 @@ struct StoneView: View {
                       verticalFlip: false)
         }
         .environment(stones)
+        .environment(GobanState())
         .onAppear() {
             stones.blackPoints = [BoardPoint(x: 0, y: 0), BoardPoint(x: 1, y: 1)]
             stones.whitePoints = [BoardPoint(x: 0, y: 1), BoardPoint(x: 1, y: 0)]
@@ -241,6 +209,7 @@ struct StoneView: View {
                       verticalFlip: false)
         }
         .environment(stones)
+        .environment(GobanState())
         .onAppear() {
             stones.blackPoints = [BoardPoint(x: 0, y: 0), BoardPoint(x: 1, y: 1)]
             stones.whitePoints = [BoardPoint(x: 0, y: 1), BoardPoint(x: 1, y: 0)]
