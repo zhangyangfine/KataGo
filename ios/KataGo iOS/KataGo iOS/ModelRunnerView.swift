@@ -16,7 +16,7 @@ struct ModelRunnerView: View {
     var body: some View {
         Group {
             if let selectedModel {
-                ContentView(selectedModel: selectedModel)
+                ContentView(selectedModel: $selectedModel)
             } else {
                 ModelPickerView(selectedModel: $selectedModel)
             }

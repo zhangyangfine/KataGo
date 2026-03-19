@@ -55,6 +55,10 @@ struct NeuralNetworkModel: Identifiable, Equatable {
         self.humanUrl = humanUrl
     }
 
+    static var builtInModel: NeuralNetworkModel? {
+        allCases.first { $0.builtIn }
+    }
+
     static let allCases: [NeuralNetworkModel] = [
         .init(
             title: "Built-in KataGo Core ML model",

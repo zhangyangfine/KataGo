@@ -177,9 +177,8 @@ struct ModelPickerView: View {
                 if result.isNew {
                     modelContext.insert(result.gameRecord)
                 }
-                if let builtInModel = NeuralNetworkModel.allCases.first(
-                    where: { $0.builtIn }
-                ) {
+                if selectedModel == nil,
+                   let builtInModel = NeuralNetworkModel.builtInModel {
                     selectedModel = builtInModel
                 }
             }

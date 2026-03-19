@@ -10,7 +10,7 @@ import SwiftData
 import KataGoInterface
 
 struct ContentView: View {
-    let selectedModel: NeuralNetworkModel
+    @Binding var selectedModel: NeuralNetworkModel?
 
     @State var stones = Stones()
     @State var messageList = MessageList()
@@ -39,7 +39,7 @@ struct ContentView: View {
     var body: some View {
         if isInitialized {
             GameSplitView(
-                selectedModel: selectedModel,
+                selectedModel: $selectedModel,
                 aiMove: $aiMove,
                 quitStatus: $quitStatus
             )
@@ -60,8 +60,8 @@ struct ContentView: View {
                 // Get messages from KataGo and append to the list of messages
                 await messageTask()
             }
-        } else {
-            LoadingView(version: $version, selectedModel: selectedModel)
+        } else if let model = selectedModel {
+            LoadingView(version: $version, selectedModel: model)
                 .task {
                     await initializationTask()
                 }

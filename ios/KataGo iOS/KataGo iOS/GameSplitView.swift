@@ -10,7 +10,7 @@ import KataGoInterface
 import UniformTypeIdentifiers
 
 struct GameSplitView: View {
-    let selectedModel: NeuralNetworkModel
+    @Binding var selectedModel: NeuralNetworkModel?
     let sgfType = UTType("ccy.KataGo-iOS.sgf")!
 
     @Binding var aiMove: String?
@@ -52,13 +52,13 @@ struct GameSplitView: View {
             .toolbar {
                 GameListToolbar(
                     gameRecord: navigationContext.selectedGameRecord,
-                    maxBoardLength: selectedModel.nnLen,
+                    maxBoardLength: selectedModel?.nnLen ?? 19,
                     quitStatus: $quitStatus
                 )
             }
         } detail: {
             GobanView(isEditorPresented: $isEditorPresented,
-                      maxBoardLength: selectedModel.nnLen,
+                      maxBoardLength: selectedModel?.nnLen ?? 19,
                       columnVisibility: $columnVisibility)
             .confirmationDialog(
                 "Do you allow AI overwriting this move?",
@@ -145,7 +145,16 @@ struct GameSplitView: View {
                           newWaitingForAnalysis: newWaitingForAnalysis)
         }
         .onOpenURL { url in
-            importUrl(url: url)
+            if let result = GameRecord.importGameRecord(from: url, in: modelContext) {
+                if result.isNew {
+                    modelContext.insert(result.gameRecord)
+                }
+                if selectedModel == nil,
+                   let builtInModel = NeuralNetworkModel.builtInModel {
+                    selectedModel = builtInModel
+                }
+                navigationContext.selectedGameRecord = result.gameRecord
+            }
         }
         .onChange(of: scenePhase) { _, newScenePhase in
             processChange(newScenePhase: newScenePhase)
@@ -386,15 +395,6 @@ struct GameSplitView: View {
                 }
                 navigationContext.selectedGameRecord = result.gameRecord
             }
-        }
-    }
-
-    private func importUrl(url: URL) {
-        if let result = GameRecord.importGameRecord(from: url, in: modelContext) {
-            if result.isNew {
-                modelContext.insert(result.gameRecord)
-            }
-            navigationContext.selectedGameRecord = result.gameRecord
         }
     }
 
