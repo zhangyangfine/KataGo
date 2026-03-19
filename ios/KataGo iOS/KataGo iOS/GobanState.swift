@@ -32,6 +32,9 @@ class GobanState {
     var soundEffect: Bool = false
     var hapticFeedback: Bool = false
 
+    @ObservationIgnored private var nextMoveCacheKey: (String, Int)? = nil
+    @ObservationIgnored private var nextMoveCacheResult: Move? = nil
+
     func sendShowBoardCommand(messageList: MessageList) {
         messageList.appendAndSend(command: "showboard")
         showBoardCount = showBoardCount + 1
@@ -439,10 +442,17 @@ class GobanState {
             return nil
         }
 
-        let sgfHelper = SgfHelper(sgf: sgf)
-        let nextMove = sgfHelper.getMove(at: currentIndex)
+        if let key = nextMoveCacheKey, key == (sgf, currentIndex) {
+            return nextMoveCacheResult
+        }
 
-        return nextMove
+        let sgfHelper = SgfHelper(sgf: sgf)
+        let result = sgfHelper.getMove(at: currentIndex)
+
+        nextMoveCacheKey = (sgf, currentIndex)
+        nextMoveCacheResult = result
+
+        return result
     }
 
     func forwardMoves(
