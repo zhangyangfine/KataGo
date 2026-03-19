@@ -51,7 +51,7 @@ struct GameLinksView: View {
         }
 
         if isSearchActive {
-            Button("More...") { searchText = "" }
+            Button("Clear Search") { searchText = "" }
                 .tint(.primary)
         }
     }

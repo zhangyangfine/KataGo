@@ -149,10 +149,6 @@ struct GameSplitView: View {
                 if result.isNew {
                     modelContext.insert(result.gameRecord)
                 }
-                if selectedModel == nil,
-                   let builtInModel = NeuralNetworkModel.builtInModel {
-                    selectedModel = builtInModel
-                }
                 navigationContext.selectedGameRecord = result.gameRecord
             }
         }
