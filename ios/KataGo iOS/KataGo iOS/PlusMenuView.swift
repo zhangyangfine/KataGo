@@ -17,6 +17,7 @@ struct PlusMenuView: View {
     @Environment(TopUIState.self) var topUIState
     @State private var showingConfig = false
     @State private var showingDeveloper = false
+    @State private var showingManual = false
 
     var body: some View {
         Menu {
@@ -48,6 +49,12 @@ struct PlusMenuView: View {
                 }
             } label: {
                 Label("Import", systemImage: "square.and.arrow.down")
+            }
+
+            Button {
+                showingManual = true
+            } label: {
+                Label("Manual", systemImage: "book")
             }
 
             if let gameRecord {
@@ -125,6 +132,14 @@ struct PlusMenuView: View {
                 .frame(minWidth: 500, minHeight: 400)
                 #endif
             }
+        }
+        .sheet(isPresented: $showingManual) {
+            NavigationStack {
+                ManualView()
+            }
+            #if os(macOS)
+            .frame(minWidth: 500, minHeight: 600)
+            #endif
         }
     }
 }
