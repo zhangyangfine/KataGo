@@ -74,7 +74,7 @@ struct ManualGettingStartedView: View {
                 ManualRow(label: "Black stone", value: "You play first by default")
                 ManualRow(label: "White stone", value: "Played by AI when \"Time per move\" is set > 0 in Configurations → AI")
                 ManualRow(label: "Win rate bar", value: "Vertical bar to the left of the board; updates each move")
-                ManualRow(label: "Move number", value: "Displayed in the toolbar")
+                ManualRow(label: "Move number", value: "Shown on each stone on the board when enabled in Configurations")
             } header: {
                 Text("Interface at a Glance")
             }
