@@ -73,7 +73,7 @@ struct ManualGettingStartedView: View {
             Section {
                 ManualRow(label: "Black stone", value: "You play first by default")
                 ManualRow(label: "White stone", value: "Played by AI when \"Time per move\" is set > 0 in Configurations → AI")
-                ManualRow(label: "Win rate bar", value: "Shown below the board; updates each move")
+                ManualRow(label: "Win rate bar", value: "Vertical bar to the left of the board; updates each move")
                 ManualRow(label: "Move number", value: "Displayed in the toolbar")
             } header: {
                 Text("Interface at a Glance")
@@ -123,8 +123,8 @@ struct ManualPlayAgainstAIView: View {
 
             Section {
                 ManualText("Blue arrows on the board show the AI's top candidate moves. The percentage label indicates the win rate for that move. The best move has the brightest arrow.")
-                ManualText("The win rate bar at the bottom of the board shows Black's estimated win probability. Above 50% is favorable for Black.")
-                ManualText("The score estimate below the win rate bar shows the expected point margin.")
+                ManualText("The win rate bar is a vertical bar to the left of the board. White's share fills from the top; Black's share fills from the bottom. The larger Black's portion, the better Black is doing.")
+                ManualText("The score estimate is shown as a number at the center of the win rate bar.")
             } header: {
                 Text("Reading AI Analysis")
             }
@@ -233,8 +233,8 @@ struct ManualAnalysisView: View {
             }
 
             Section {
-                ManualText("The win rate bar runs across the bottom of the board. Black's estimated win probability fills from the left (black side); White's fills from the right. The midpoint line represents 50%.")
-                ManualText("The score estimate is displayed as a signed number (positive = Black leads, negative = White leads).")
+                ManualText("The win rate bar is a vertical bar to the left of the board. White's portion fills from the top; Black's portion fills from the bottom. A larger black section means Black is leading.")
+                ManualText("The score estimate is displayed as a number at the center of the win rate bar.")
             } header: {
                 Text("Win Rate & Score Bar")
             }
