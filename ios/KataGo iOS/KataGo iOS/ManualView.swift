@@ -116,7 +116,7 @@ struct ManualPlayAgainstAIView: View {
                 ManualStep(number: 3, text: "If White AI \"Time per move\" is 0 (the default), the AI only provides analysis — you must place White stones yourself or increase the time.")
                 ManualStep(number: 4, text: "Continue alternating until you want to pass or the game ends.")
                 ManualStep(number: 5, text: "To pass your turn, tap the \(Image(systemName: "hand.raised")) Pass button in the toolbar.")
-                ManualStep(number: 6, text: "When both players pass consecutively, the game ends and score is counted.")
+                ManualStep(number: 6, text: "When both players pass consecutively, the game ends. AI auto-play and analysis stop. The score shown is the AI's last estimated score from analysis — the app does not perform formal dead-stone marking or territory counting.")
             } header: {
                 Text("Playing the Game")
             }
@@ -200,9 +200,9 @@ struct ManualBoardControlsView: View {
             }
 
             Section {
-                ManualText("After both players pass, the app enters scoring mode. Dead stones are marked automatically. Tap any group to toggle it as alive or dead. The final score is displayed in the score bar.")
+                ManualText("After both players pass, AI auto-play and analysis stop. The app does not enter a dedicated scoring mode and does not count territory or mark dead stones. The score estimate visible in the bar is the AI's last calculated estimate from analysis.")
             } header: {
-                Text("Scoring")
+                Text("End of Game")
             }
         }
         .navigationTitle("Board & Controls")
