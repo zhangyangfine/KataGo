@@ -58,8 +58,8 @@ struct ManualGettingStartedView: View {
                 ManualStep(number: 1, text: "Open the app. A default game is created automatically.")
                 ManualStep(number: 2, text: "Tap the \(Image(systemName: "ellipsis.circle")) menu (top right) to access game options.")
                 ManualStep(number: 3, text: "Tap \"New Game\" to start a fresh game, or \"Configurations\" to set board size, komi, and rules before playing.")
-                ManualStep(number: 4, text: "Tap any intersection on the board to place your stone.")
-                ManualStep(number: 5, text: "The AI responds automatically after your move.")
+                ManualStep(number: 4, text: "In Configurations → AI → White AI, set \"Time per move\" to a value greater than 0 (e.g. 5s) so the AI plays White automatically.")
+                ManualStep(number: 5, text: "Tap any intersection on the board to place your stone. The AI analyzes the position immediately and, if Time per move > 0, plays its response.")
             } header: {
                 Text("Quick Start")
             }
@@ -72,7 +72,7 @@ struct ManualGettingStartedView: View {
 
             Section {
                 ManualRow(label: "Black stone", value: "You play first by default")
-                ManualRow(label: "White stone", value: "AI plays second by default")
+                ManualRow(label: "White stone", value: "Played by AI when \"Time per move\" is set > 0 in Configurations → AI")
                 ManualRow(label: "Win rate bar", value: "Shown below the board; updates each move")
                 ManualRow(label: "Move number", value: "Displayed in the toolbar")
             } header: {
@@ -93,7 +93,7 @@ struct ManualPlayAgainstAIView: View {
         List {
             Section {
                 ManualText(
-                    "A 9×9 game is the ideal way to learn. Games finish quickly (typically 30–60 moves), the AI responds in seconds, and the smaller board makes it easy to understand territory and captures."
+                    "A 9×9 game is the ideal way to learn. Games finish quickly (typically 30–60 moves), the smaller board makes it easy to understand territory and captures, and the AI can respond in seconds once Time per move is configured."
                 )
             } header: {
                 Text("Why Start with 9×9")
@@ -102,21 +102,21 @@ struct ManualPlayAgainstAIView: View {
             Section {
                 ManualStep(number: 1, text: "Tap \(Image(systemName: "ellipsis.circle")) → \"New Game\".")
                 ManualStep(number: 2, text: "Tap \(Image(systemName: "ellipsis.circle")) → \"Configurations\".")
-                ManualStep(number: 3, text: "Set \"Board Size\" to 9 × 9.")
-                ManualStep(number: 4, text: "Set \"Komi\" to 6.5 (standard for 9×9 — compensates White for going second).")
-                ManualStep(number: 5, text: "Choose \"Rules\" (Japanese or Chinese are most common).")
-                ManualStep(number: 6, text: "Tap \"Done\" (top right of Configurations sheet) to confirm.")
-                ManualStep(number: 7, text: "You are now ready to play on the 9×9 board.")
+                ManualStep(number: 3, text: "Tap \"Game Settings\" → \"Rule\". Set \"Board Size\" to 9 × 9, \"Komi\" to 6.5, and choose \"Rules\" (Japanese or Chinese are most common).")
+                ManualStep(number: 4, text: "Tap \"AI\", then under \"White AI\" set \"Time per move\" to a value greater than 0 (e.g. 5s). This enables the AI to play White automatically.")
+                ManualStep(number: 5, text: "Tap \"Done\" (top right of the sheet) to confirm.")
+                ManualStep(number: 6, text: "You are now ready to play on the 9×9 board.")
             } header: {
                 Text("Setting Up a 9×9 Game")
             }
 
             Section {
                 ManualStep(number: 1, text: "You play Black. Tap any open intersection to place a stone.")
-                ManualStep(number: 2, text: "The AI (White) responds automatically. Wait a moment for it to calculate its move.")
-                ManualStep(number: 3, text: "Continue alternating until you want to pass or the game ends.")
-                ManualStep(number: 4, text: "To pass your turn, tap the \(Image(systemName: "hand.raised")) Pass button in the toolbar.")
-                ManualStep(number: 5, text: "When both players pass consecutively, the game ends and score is counted.")
+                ManualStep(number: 2, text: "The AI immediately analyzes the new position, showing candidate moves as arrows. If \"Time per move\" > 0 for White AI, it also plays a move automatically after the allotted time.")
+                ManualStep(number: 3, text: "If White AI \"Time per move\" is 0 (the default), the AI only provides analysis — you must place White stones yourself or increase the time.")
+                ManualStep(number: 4, text: "Continue alternating until you want to pass or the game ends.")
+                ManualStep(number: 5, text: "To pass your turn, tap the \(Image(systemName: "hand.raised")) Pass button in the toolbar.")
+                ManualStep(number: 6, text: "When both players pass consecutively, the game ends and score is counted.")
             } header: {
                 Text("Playing the Game")
             }
@@ -148,9 +148,9 @@ struct ManualPlayAgainstAIView: View {
             }
 
             Section {
-                ManualRow(label: "Handicap stones", value: "Set in Configurations → Handicap")
-                ManualRow(label: "AI strength", value: "Set Visits in Configurations — lower = weaker AI")
-                ManualRow(label: "Human SL", value: "Enable Human SL mode for a more natural playing style")
+                ManualRow(label: "Handicap stones", value: "Set in Configurations → Game Settings → Rule → Handicap")
+                ManualRow(label: "AI strength", value: "Set \"Time per move\" in Configurations → AI — shorter time = weaker AI")
+                ManualRow(label: "Human SL", value: "Set a Human profile in Configurations → AI for a more natural, human-like playing style")
             } header: {
                 Text("Adjusting Difficulty")
             }
@@ -253,7 +253,7 @@ struct ManualAnalysisView: View {
             }
 
             Section {
-                ManualRow(label: "Visits", value: "More visits = stronger analysis; set in Configurations")
+                ManualRow(label: "Time per move", value: "Seconds the AI spends searching per move; set in Configurations → AI for each color")
                 ManualRow(label: "Analysis threads", value: "Automatically set based on device")
                 ManualRow(label: "Neural Engine", value: "Used on iPhone/iPad for power efficiency")
                 ManualRow(label: "Metal GPU", value: "Used on Mac for faster analysis")
@@ -289,9 +289,9 @@ struct ManualConfigurationView: View {
             }
 
             Section {
-                ManualRow(label: "Visits", value: "Maximum search visits per move — lower = faster/weaker AI")
-                ManualRow(label: "Human SL", value: "Human style level — makes AI play more like a human at that rank")
-                ManualRow(label: "Temperature", value: "Higher values make AI moves less predictable")
+                ManualRow(label: "Time per move (Black AI / White AI)", value: "Seconds the AI thinks before playing. Set to 0 to disable AI auto-play for that color. Higher values produce stronger moves.")
+                ManualRow(label: "Human profile (Black AI / White AI)", value: "Makes the AI play in the style of a human at a chosen rank rather than at its full strength")
+                ManualRow(label: "Playout doubling advantage", value: "Biases the AI toward aggressive or defensive play")
             } header: {
                 Text("AI Strength")
             }
