@@ -48,7 +48,7 @@ struct ManualGettingStartedView: View {
         List {
             Section {
                 ManualText(
-                    "KataGo Anytime is a Go (Weiqi/Baduk) app powered by the KataGo engine, one of the strongest open-source Go AIs. You can play on a 9×9, 13×13, or 19×19 board, review analysis in real time, and save your games."
+                    "KataGo Anytime is a Go (Weiqi/Baduk) app powered by the KataGo engine, one of the strongest open-source Go AIs. You can play on any board size up to the model limit, review analysis in real time, and save your games."
                 )
             } header: {
                 Text("Overview")
@@ -58,7 +58,7 @@ struct ManualGettingStartedView: View {
                 ManualStep(number: 1, text: "Open the app. A default game is created automatically.")
                 ManualStep(number: 2, text: "Tap the \(Image(systemName: "ellipsis.circle")) menu (top right) to access game options.")
                 ManualStep(number: 3, text: "Tap \"New Game\" to start a fresh game, or \"Configurations\" to set board size, komi, and rules before playing.")
-                ManualStep(number: 4, text: "In Configurations → AI → White AI, set \"Time per move\" to a value greater than 0 (e.g. 5s) so the AI plays White automatically.")
+                ManualStep(number: 4, text: "In Configurations → Game Settings → AI → White AI, set \"Time per move\" to a value greater than 0 (e.g. 5s) so the AI plays White automatically.")
                 ManualStep(number: 5, text: "Tap any intersection on the board to place your stone. The AI analyzes the position immediately and, if Time per move > 0, plays its response.")
             } header: {
                 Text("Quick Start")
@@ -72,7 +72,7 @@ struct ManualGettingStartedView: View {
 
             Section {
                 ManualRow(label: "Black stone", value: "You play first by default")
-                ManualRow(label: "White stone", value: "Played by AI when \"Time per move\" is set > 0 in Configurations → AI")
+                ManualRow(label: "White stone", value: "Played by AI when \"Time per move\" is set > 0 in Configurations → Game Settings → AI")
                 ManualRow(label: "Win rate bar", value: "Vertical bar to the left of the board; updates each move")
                 ManualRow(label: "Move number", value: "Shown on each stone on the board when enabled in Configurations")
             } header: {
@@ -102,7 +102,7 @@ struct ManualPlayAgainstAIView: View {
             Section {
                 ManualStep(number: 1, text: "Tap \(Image(systemName: "ellipsis.circle")) → \"New Game\".")
                 ManualStep(number: 2, text: "Tap \(Image(systemName: "ellipsis.circle")) → \"Configurations\".")
-                ManualStep(number: 3, text: "Tap \"Game Settings\" → \"Rule\". Set \"Board Size\" to 9 × 9, \"Komi\" to 6.5, and choose \"Rules\" (Japanese or Chinese are most common).")
+                ManualStep(number: 3, text: "Tap \"Game Settings\" → \"Rule\". Set \"Board width\" and \"Board height\" both to 9, set \"Komi\" to 6.5, and choose a scoring rule (Area for Chinese, Territory for Japanese).")
                 ManualStep(number: 4, text: "Tap \"AI\", then under \"White AI\" set \"Time per move\" to a value greater than 0 (e.g. 5s). This enables the AI to play White automatically.")
                 ManualStep(number: 5, text: "Tap \"Done\" (top right of the sheet) to confirm.")
                 ManualStep(number: 6, text: "You are now ready to play on the 9×9 board.")
@@ -112,17 +112,17 @@ struct ManualPlayAgainstAIView: View {
 
             Section {
                 ManualStep(number: 1, text: "You play Black. Tap any open intersection to place a stone.")
-                ManualStep(number: 2, text: "The AI immediately analyzes the new position, showing candidate moves as arrows. If \"Time per move\" > 0 for White AI, it also plays a move automatically after the allotted time.")
+                ManualStep(number: 2, text: "The AI immediately analyzes the new position, showing candidate moves as colored circles. If \"Time per move\" > 0 for White AI, it also plays a move automatically after the allotted time.")
                 ManualStep(number: 3, text: "If White AI \"Time per move\" is 0 (the default), the AI only provides analysis — you must place White stones yourself or increase the time.")
                 ManualStep(number: 4, text: "Continue alternating until you want to pass or the game ends.")
-                ManualStep(number: 5, text: "To pass your turn, tap the \(Image(systemName: "hand.raised")) Pass button in the toolbar.")
+                ManualStep(number: 5, text: "To pass your turn, tap the pass intersection below the board grid (visible when \"Show pass\" is enabled in Configurations → Game Settings → View).")
                 ManualStep(number: 6, text: "When both players pass consecutively, the game ends. AI auto-play and analysis stop. The score shown is the AI's last estimated score from analysis — the app does not perform formal dead-stone marking or territory counting.")
             } header: {
                 Text("Playing the Game")
             }
 
             Section {
-                ManualText("Blue arrows on the board show the AI's top candidate moves. The percentage label indicates the win rate for that move. The best move has the brightest arrow.")
+                ManualText("Colored circles on the board show the AI's top candidate moves. The circle color shifts from green (most-visited) toward red (least-visited). The best move is highlighted with a blue ring.")
                 ManualText("The win rate bar is a vertical bar to the left of the board. White's share fills from the top; Black's share fills from the bottom. The larger Black's portion, the better Black is doing.")
                 ManualText("The score estimate is shown as a number at the center of the win rate bar.")
             } header: {
@@ -140,17 +140,17 @@ struct ManualPlayAgainstAIView: View {
             }
 
             Section {
-                ManualText("Tap \(Image(systemName: "arrow.uturn.backward")) (undo) in the toolbar to take back your last move. You can undo multiple times to explore different lines.")
-                ManualText("Tap \(Image(systemName: "arrow.uturn.forward")) (redo) to replay a move you undid.")
-                ManualText("After undoing, tap a different intersection to start a new branch. Your original line is preserved and can be revisited.")
+                ManualText("Tap \(Image(systemName: "backward.frame")) (back 1 step) in the toolbar to take back your last move. You can step back multiple times to explore different lines.")
+                ManualText("Tap \(Image(systemName: "forward.frame")) (forward 1 step) to replay a move you stepped back through.")
+                ManualText("After stepping back, tap a different intersection to start a new branch. Your original line is preserved and can be revisited by stepping forward.")
             } header: {
-                Text("Undoing & Branching")
+                Text("Stepping Back & Branching")
             }
 
             Section {
-                ManualRow(label: "Handicap stones", value: "Set in Configurations → Game Settings → Rule → Handicap")
-                ManualRow(label: "AI strength", value: "Set \"Time per move\" in Configurations → AI — shorter time = weaker AI")
-                ManualRow(label: "Human SL", value: "Set a Human profile in Configurations → AI for a more natural, human-like playing style")
+                ManualRow(label: "Handicap stones", value: "Set in Configurations → Game Settings → Rule → White handicap bonus")
+                ManualRow(label: "AI strength", value: "Set \"Time per move\" in Configurations → Game Settings → AI — shorter time = weaker AI")
+                ManualRow(label: "Human SL", value: "Set a Human profile in Configurations → Game Settings → AI for a more natural, human-like playing style")
             } header: {
                 Text("Adjusting Difficulty")
             }
@@ -169,6 +169,7 @@ struct ManualBoardControlsView: View {
         List {
             Section {
                 ManualRow(label: "Tap intersection", value: "Place a stone")
+                ManualRow(label: "Tap pass intersection (below the board grid)", value: "Pass your turn (requires \"Show pass\" enabled in Configurations → Game Settings → View)")
                 ManualRow(label: "Tap existing stone (edit mode)", value: "Remove that stone")
                 ManualRow(label: "Pinch / spread", value: "Zoom the board in or out")
                 ManualRow(label: "Drag", value: "Pan the board when zoomed in")
@@ -177,26 +178,29 @@ struct ManualBoardControlsView: View {
             }
 
             Section {
-                ManualRow(label: "\(Image(systemName: "arrow.uturn.backward")) Undo", value: "Take back the last move")
-                ManualRow(label: "\(Image(systemName: "arrow.uturn.forward")) Redo", value: "Replay an undone move")
-                ManualRow(label: "\(Image(systemName: "hand.raised")) Pass", value: "Pass your turn")
-                ManualRow(label: "\(Image(systemName: "flag")) Resign", value: "Concede the current game")
-                ManualRow(label: "\(Image(systemName: "play")) Auto-play", value: "Let the AI play both sides automatically")
-                ManualRow(label: "\(Image(systemName: "pencil")) Edit", value: "Enter board-editing mode to set up positions")
+                ManualRow(label: "\(Image(systemName: "backward.end")) Go to start", value: "Jump to the beginning of the game")
+                ManualRow(label: "\(Image(systemName: "backward")) Back 10", value: "Step back 10 moves")
+                ManualRow(label: "\(Image(systemName: "backward.frame")) Back 1", value: "Step back 1 move (undo)")
+                ManualRow(label: "Sparkle icon — Toggle analysis", value: "Cycle analysis: running → paused → off")
+                ManualRow(label: "\(Image(systemName: "eye")) / \(Image(systemName: "book")) / \(Image(systemName: "eye.slash")) — Visibility", value: "Cycle between showing AI analysis, book moves, or hiding all overlays")
+                ManualRow(label: "\(Image(systemName: "forward.frame")) Forward 1", value: "Step forward 1 move (redo)")
+                ManualRow(label: "\(Image(systemName: "forward")) Forward 10", value: "Step forward 10 moves")
+                ManualRow(label: "\(Image(systemName: "forward.end")) Go to end", value: "Jump to the latest move")
+                ManualRow(label: "\(Image(systemName: "lock")) / \(Image(systemName: "lock.open")) — Edit mode", value: "Tap to enter board-editing mode; tap again to return to play mode")
             } header: {
                 Text("Toolbar Buttons")
             }
 
             Section {
-                ManualText("Tap \(Image(systemName: "pencil")) Edit in the toolbar to enter board-editing mode. In this mode you can place or remove Black and White stones freely to set up a specific position. Tap Edit again (or Done) to return to play mode.")
+                ManualText("Tap the \(Image(systemName: "lock")) button in the toolbar to enter board-editing mode. In this mode you can place or remove Black and White stones freely to set up a specific position. Tap \(Image(systemName: "lock.open")) again to return to play mode.")
             } header: {
                 Text("Board Editing Mode")
             }
 
             Section {
-                ManualText("Tap the analysis chart icon or swipe up on the win rate bar to expand the score/win rate line chart. The chart plots win rate over every move of the game. Tap any point on the chart to jump to that move.")
+                ManualText("The score lead chart is shown in the info panel above the board. It plots Black's score lead over every move of the game. Drag across the chart to select a move and jump to that board position.")
             } header: {
-                Text("Win Rate Chart")
+                Text("Score Lead Chart")
             }
 
             Section {
@@ -224,10 +228,10 @@ struct ManualAnalysisView: View {
             }
 
             Section {
-                ManualRow(label: "Blue arrows", value: "Candidate moves; brightness indicates rank")
-                ManualRow(label: "Percentage label", value: "Win rate if that move is played")
-                ManualRow(label: "Ownership overlay", value: "Color tint shows which player controls each intersection")
-                ManualRow(label: "Score delta", value: "Point gain or loss shown on candidate moves")
+                ManualRow(label: "Colored circles", value: "Candidate moves; color shifts from green (most-visited) to red (least-visited)")
+                ManualRow(label: "Blue ring", value: "Highlights the best move among all candidates")
+                ManualRow(label: "Label on circle", value: "Shows win rate, score lead, or visit count depending on the Analysis information setting")
+                ManualRow(label: "Ownership overlay", value: "Grayscale tint on intersections shows which player is estimated to control each point")
             } header: {
                 Text("Board Overlay")
             }
@@ -240,20 +244,20 @@ struct ManualAnalysisView: View {
             }
 
             Section {
-                ManualText("The line chart below the board plots Black's win rate over every move. Use it to identify the turning point of the game — where the win rate shifted most dramatically.")
-                ManualText("Tap any point on the chart to jump to that board position. This lets you review critical moments without manually stepping through moves.")
+                ManualText("The score lead chart is shown in the info panel above the board. It plots Black's score lead over every move of the game. Use it to identify the turning point — where the score shifted most dramatically.")
+                ManualText("Drag across the chart to select a move. The board jumps to that position, letting you review critical moments without manually stepping through moves.")
             } header: {
-                Text("Line Chart")
+                Text("Score Lead Chart")
             }
 
             Section {
-                ManualText("KataGo's book lookup (when enabled) highlights opening moves from a joseki database. A book icon appears next to moves that match known good patterns.")
+                ManualText("KataGo's book lookup mode activates automatically for 9×9 games. Toggle it with the eye button (cycle to the book icon). In book mode, colored circles from the joseki database replace the engine's live analysis.")
             } header: {
                 Text("Joseki Book Lookup")
             }
 
             Section {
-                ManualRow(label: "Time per move", value: "Seconds the AI spends searching per move; set in Configurations → AI for each color")
+                ManualRow(label: "Time per move", value: "Seconds the AI spends searching per move; set in Configurations → Game Settings → AI for each color")
                 ManualRow(label: "Analysis threads", value: "Automatically set based on device")
                 ManualRow(label: "Neural Engine", value: "Used on iPhone/iPad for power efficiency")
                 ManualRow(label: "Metal GPU", value: "Used on Mac for faster analysis")
@@ -274,38 +278,46 @@ struct ManualConfigurationView: View {
     var body: some View {
         List {
             Section {
-                ManualText("Open Configurations from \(Image(systemName: "ellipsis.circle")) → \"Configurations\". Settings apply to the current game. Start a new game or use Clone to apply new settings to a fresh game.")
+                ManualText("Open Configurations from \(Image(systemName: "ellipsis.circle")) → \"Configurations\". The sheet has two top-level sections: \"Global Settings\" (shared across all games) and \"Game Settings\" (per-game).")
             } header: {
                 Text("Opening Configurations")
             }
 
             Section {
-                ManualRow(label: "Board Size", value: "9×9, 13×13, or 19×19 (and custom up to the model limit)")
-                ManualRow(label: "Komi", value: "Compensation points given to White (commonly 6.5 or 7.5)")
-                ManualRow(label: "Handicap", value: "Number of Black handicap stones placed at start")
-                ManualRow(label: "Rules", value: "Japanese, Chinese, Tromp-Taylor, Korean, AGA, or NZ")
+                ManualRow(label: "Board width / Board height", value: "Set each dimension independently; any size from 2 up to the model limit")
+                ManualRow(label: "Komi", value: "Compensation points given to White; enter any value")
+                ManualRow(label: "Ko rule", value: "SIMPLE, POSITIONAL, or SITUATIONAL")
+                ManualRow(label: "Scoring rule", value: "AREA (Chinese) or TERRITORY (Japanese)")
+                ManualRow(label: "Tax rule", value: "NONE, SEKI, or ALL")
             } header: {
-                Text("Game Settings")
+                Text("Game Settings → Rule")
             }
 
             Section {
                 ManualRow(label: "Time per move (Black AI / White AI)", value: "Seconds the AI thinks before playing. Set to 0 to disable AI auto-play for that color. Higher values produce stronger moves.")
                 ManualRow(label: "Human profile (Black AI / White AI)", value: "Makes the AI play in the style of a human at a chosen rank rather than at its full strength")
-                ManualRow(label: "Playout doubling advantage", value: "Biases the AI toward aggressive or defensive play")
+                ManualRow(label: "Playout doubling advantage", value: "Biases the search toward one side; positive values favor Black, negative favor White")
             } header: {
-                Text("AI Strength")
+                Text("Game Settings → AI")
             }
 
             Section {
-                ManualRow(label: "Commentary Tone", value: "Style of AI commentary: technical, educational, encouraging, enthusiastic, or poetic")
-                ManualRow(label: "Sound Effects", value: "Stone placement and capture sounds (global setting)")
-                ManualRow(label: "Haptic Feedback", value: "Vibration on stone placement (global setting)")
+                ManualRow(label: "Apple Intelligence", value: "Enable or disable AI commentary generation")
+                ManualRow(label: "Tone", value: "Style of commentary: Technical, Educational, Encouraging, Enthusiastic, or Poetic")
+                ManualRow(label: "Temperature", value: "Controls how varied the commentary language is")
             } header: {
-                Text("App Preferences")
+                Text("Game Settings → Comment")
             }
 
             Section {
-                ManualText("Global settings (sound, haptics) are shared across all games. They can be toggled in the \(Image(systemName: "ellipsis.circle")) menu or in the Configurations sheet.")
+                ManualRow(label: "Sound effect", value: "Stone placement and capture sounds")
+                ManualRow(label: "Haptic feedback", value: "Vibration on stone placement")
+            } header: {
+                Text("Global Settings")
+            }
+
+            Section {
+                ManualText("Global Settings (sound, haptics) are shared across all games and found in Configurations → Global Settings. Game Settings (rules, AI, view, etc.) apply only to the current game.")
             } header: {
                 Text("Global vs. Per-Game Settings")
             }
@@ -361,7 +373,7 @@ struct ManualGameManagementView: View {
             }
 
             Section {
-                ManualText("Long-press a game in the sidebar, or tap \(Image(systemName: "pencil")) next to the game title, to rename it.")
+                ManualText("Tap the game name shown in the top toolbar to open the name editor. Enter a new name and tap \"Save\".")
             } header: {
                 Text("Renaming a Game")
             }
@@ -391,13 +403,13 @@ struct ManualCommentaryView: View {
             }
 
             Section {
-                ManualText("Commentary appears automatically in the comment panel below the board after each move. It describes the move's impact on win rate, score, and key stones.")
+                ManualText("Commentary appears in the info panel above the board. Switch to the comments tab by tapping the \(Image(systemName: "text.rectangle")) button at the bottom of the info panel. It describes the move's impact on win rate, score, and key stones.")
             } header: {
                 Text("Where to Find Commentary")
             }
 
             Section {
-                ManualRow(label: "Technical", value: "Precise analysis: win-rate numbers, joseki references")
+                ManualRow(label: "Technical", value: "Precise analysis: win-rate numbers, score evaluation")
                 ManualRow(label: "Educational", value: "Explains concepts suitable for learning players")
                 ManualRow(label: "Encouraging", value: "Supportive and positive tone regardless of the result")
                 ManualRow(label: "Enthusiastic", value: "Energetic and exciting descriptions of the game")
@@ -408,8 +420,8 @@ struct ManualCommentaryView: View {
 
             Section {
                 ManualStep(number: 1, text: "Tap \(Image(systemName: "ellipsis.circle")) → \"Configurations\".")
-                ManualStep(number: 2, text: "Scroll to the Commentary section.")
-                ManualStep(number: 3, text: "Choose your preferred tone.")
+                ManualStep(number: 2, text: "Tap \"Game Settings\" → \"Comment\".")
+                ManualStep(number: 3, text: "Choose your preferred tone from the \"Tone\" picker.")
                 ManualStep(number: 4, text: "Tap \"Done\". Commentary will use the new tone from the next move onwards.")
             } header: {
                 Text("Changing the Tone")
