@@ -1,5 +1,25 @@
 #!/bin/sh
 
+# Install Metal Toolchain (required for Xcode 26+; not bundled by default)
+METAL_EXPORT_PATH="/tmp/metalToolchainExport"
+rm -rf "$METAL_EXPORT_PATH"
+
+xcodebuild -downloadComponent metalToolchain -exportPath "$METAL_EXPORT_PATH"
+
+# Get current Xcode build version (e.g. "17A5241e")
+XCODE_BUILD=$(xcodebuild -version | grep 'Build version' | awk '{print $3}')
+
+# Find the downloaded bundle (e.g. MetalToolchain-17A5295f.exportedBundle)
+BUNDLE_PATH=$(ls "$METAL_EXPORT_PATH"/*.exportedBundle)
+
+# Extract the version baked into the bundle name
+BUNDLE_VERSION=$(basename "$BUNDLE_PATH" .exportedBundle | sed 's/MetalToolchain-//')
+
+# Patch ExportMetadata.plist so its version matches the running Xcode build
+sed -i '' "s/${BUNDLE_VERSION}/${XCODE_BUILD}/g" "${BUNDLE_PATH}/ExportMetadata.plist"
+
+xcodebuild -importComponent metalToolchain -importPath "$BUNDLE_PATH"
+
 DEFAULT_MODEL_GZ="default_model.bin.gz"
 DEFAULT_MODEL_URL="https://github.com/ChinChangYang/KataGo/releases/download/v1.16.4-coreml1/kata1-b28c512nbt-adam-s11165M-d5387M-null.bin.gz"
 DEFAULT_MODEL_RES="../Resources/default_model.bin.gz"
