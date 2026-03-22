@@ -114,7 +114,7 @@ public class SgfHelper {
     }
 
     public var moveSize: Int? {
-        guard ((sgfCpp.valid) && (sgfCpp.movesSize > 0)) else { return nil }
+        guard sgfCpp.valid else { return nil }
         return Int(sgfCpp.movesSize)
     }
 
