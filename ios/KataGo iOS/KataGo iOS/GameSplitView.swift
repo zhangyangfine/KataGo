@@ -41,11 +41,40 @@ struct GameSplitView: View {
     @AppStorage("GlobalSettings.hapticFeedback") private var globalHapticFeedback = false
 
     var body: some View {
-        @Bindable var navigationContext = navigationContext
-        @Bindable var gobanState = gobanState
         @Bindable var topUIState = topUIState
 
-        NavigationSplitView(columnVisibility: $columnVisibility) {
+        splitView
+            .confirmationDialog(
+                "Are you sure you want to delete this game? THIS ACTION IS IRREVERSIBLE!",
+                isPresented: $topUIState.confirmingDeletion,
+                titleVisibility: .visible
+            ) {
+                Button("Delete", role: .destructive) {
+                    if let gameRecord = navigationContext.selectedGameRecord {
+                        navigationContext.selectedGameRecord = nil
+                        modelContext.safelyDelete(gameRecord: gameRecord)
+                    }
+                }
+
+                Button("Cancel", role: .cancel) {
+                    topUIState.confirmingDeletion = false
+                }
+            }
+            .fileImporter(
+                isPresented: $topUIState.importing,
+                allowedContentTypes: [sgfType, .text],
+                allowsMultipleSelection: true
+            ) { result in
+                importFiles(result: result)
+            }
+            .onDrop(of: [sgfType, .text], isTargeted: nil, perform: handleDrop)
+    }
+
+    private var splitView: some View {
+        @Bindable var navigationContext = navigationContext
+        @Bindable var gobanState = gobanState
+
+        return NavigationSplitView(columnVisibility: $columnVisibility) {
             GameListView(isEditorPresented: $isEditorPresented,
                          selectedGameRecord: $navigationContext.selectedGameRecord,
                          isGameListViewAppeared: $isGameListViewAppeared)
@@ -57,74 +86,7 @@ struct GameSplitView: View {
                 )
             }
         } detail: {
-            GobanView(isEditorPresented: $isEditorPresented,
-                      maxBoardLength: selectedModel?.nnLen ?? 19,
-                      columnVisibility: $columnVisibility)
-            .confirmationDialog(
-                "Do you allow AI overwriting this move?",
-                isPresented: $gobanState.confirmingAIOverwrite,
-                titleVisibility: .visible
-            ) {
-                Button("Overwrite", role: .destructive) {
-                    if let gameRecord = navigationContext.selectedGameRecord,
-                       let turn = player.nextColorSymbolForPlayCommand {
-                        gobanState.playAIMove(
-                            aiMove: aiMove,
-                            gameRecord: gameRecord,
-                            turn: turn,
-                            analysis: analysis,
-                            board: board,
-                            stones: stones,
-                            messageList: messageList,
-                            player: player,
-                            audioModel: audioModel
-                        )
-                    }
-                }
-
-                Button("Cancel", role: .cancel) {
-                    gobanState.confirmingAIOverwrite = false
-                    gobanState.analysisStatus = .clear
-                }
-            }
-            .confirmationDialog(
-                illegalMoveReasonText,
-                isPresented: $gobanState.confirmingIllegalMove,
-                titleVisibility: .visible
-            ) {
-                Button("Play Anyway", role: .destructive) {
-                    if let gameRecord = navigationContext.selectedGameRecord {
-                        gobanState.playPendingHumanMove(
-                            gameRecord: gameRecord,
-                            analysis: analysis,
-                            board: board,
-                            stones: stones,
-                            messageList: messageList,
-                            player: player,
-                            audioModel: audioModel
-                        )
-                    } else {
-                        gobanState.clearPendingMove()
-                    }
-                }
-
-                Button("Cancel", role: .cancel) {
-                    gobanState.clearPendingMove()
-                }
-            }
-            .confirmationDialog(
-                "Are you sure you want to restore the game position? This will discard the current branch.",
-                isPresented: $gobanState.confirmingBranchDeactivation,
-                titleVisibility: .visible
-            ) {
-                Button("Restore", role: .destructive) {
-                    gobanState.deactivateBranch()
-                }
-
-                Button("Cancel", role: .cancel) {
-                    gobanState.confirmingBranchDeactivation = false
-                }
-            }
+            detailView
         }
         .onAppear {
             gobanState.soundEffect = globalSoundEffect
@@ -145,12 +107,7 @@ struct GameSplitView: View {
                           newWaitingForAnalysis: newWaitingForAnalysis)
         }
         .onOpenURL { url in
-            if let result = GameRecord.importGameRecord(from: url, in: modelContext) {
-                if result.isNew {
-                    modelContext.insert(result.gameRecord)
-                }
-                navigationContext.selectedGameRecord = result.gameRecord
-            }
+            importAndSelect(from: url)
         }
         .onChange(of: scenePhase) { _, newScenePhase in
             processChange(newScenePhase: newScenePhase)
@@ -179,42 +136,86 @@ struct GameSplitView: View {
             )
         }
         .onChange(of: gobanState.analysisStatus) { _, newValue in
-            if newValue == .clear {
-                messageList.appendAndSend(command: "stop")
-            }
+            processAnalysisStatusChange(newValue: newValue)
         }
         .onChange(of: bookLookup.isLoaded) { _, newValue in
-            if newValue {
-                syncBookState()
-            }
+            processBookLoadedChange(newValue: newValue)
         }
         .onChange(of: gobanState.eyeStatus) { _, newEyeStatus in
-            if newEyeStatus == .book {
-                syncBookState()
-            }
+            processEyeStatusChange(newEyeStatus: newEyeStatus)
         }
+    }
+
+    private var detailView: some View {
+        @Bindable var gobanState = gobanState
+
+        return GobanView(isEditorPresented: $isEditorPresented,
+                         maxBoardLength: selectedModel?.nnLen ?? 19,
+                         columnVisibility: $columnVisibility)
         .confirmationDialog(
-            "Are you sure you want to delete this game? THIS ACTION IS IRREVERSIBLE!",
-            isPresented: $topUIState.confirmingDeletion,
+            "Do you allow AI overwriting this move?",
+            isPresented: $gobanState.confirmingAIOverwrite,
             titleVisibility: .visible
         ) {
-            Button("Delete", role: .destructive) {
-                if let gameRecord = navigationContext.selectedGameRecord {
-                    navigationContext.selectedGameRecord = nil
-                    modelContext.safelyDelete(gameRecord: gameRecord)
+            Button("Overwrite", role: .destructive) {
+                if let gameRecord = navigationContext.selectedGameRecord,
+                   let turn = player.nextColorSymbolForPlayCommand {
+                    gobanState.playAIMove(
+                        aiMove: aiMove,
+                        gameRecord: gameRecord,
+                        turn: turn,
+                        analysis: analysis,
+                        board: board,
+                        stones: stones,
+                        messageList: messageList,
+                        player: player,
+                        audioModel: audioModel
+                    )
                 }
             }
 
             Button("Cancel", role: .cancel) {
-                topUIState.confirmingDeletion = false
+                gobanState.confirmingAIOverwrite = false
+                gobanState.analysisStatus = .clear
             }
         }
-        .fileImporter(
-            isPresented: $topUIState.importing,
-            allowedContentTypes: [sgfType, .text],
-            allowsMultipleSelection: true
-        ) { result in
-            importFiles(result: result)
+        .confirmationDialog(
+            illegalMoveReasonText,
+            isPresented: $gobanState.confirmingIllegalMove,
+            titleVisibility: .visible
+        ) {
+            Button("Play Anyway", role: .destructive) {
+                if let gameRecord = navigationContext.selectedGameRecord {
+                    gobanState.playPendingHumanMove(
+                        gameRecord: gameRecord,
+                        analysis: analysis,
+                        board: board,
+                        stones: stones,
+                        messageList: messageList,
+                        player: player,
+                        audioModel: audioModel
+                    )
+                } else {
+                    gobanState.clearPendingMove()
+                }
+            }
+
+            Button("Cancel", role: .cancel) {
+                gobanState.clearPendingMove()
+            }
+        }
+        .confirmationDialog(
+            "Are you sure you want to restore the game position? This will discard the current branch.",
+            isPresented: $gobanState.confirmingBranchDeactivation,
+            titleVisibility: .visible
+        ) {
+            Button("Restore", role: .destructive) {
+                gobanState.deactivateBranch()
+            }
+
+            Button("Cancel", role: .cancel) {
+                gobanState.confirmingBranchDeactivation = false
+            }
         }
     }
 
@@ -380,18 +381,67 @@ struct GameSplitView: View {
         }
     }
 
+    private func processAnalysisStatusChange(newValue: AnalysisStatus) {
+        if newValue == .clear {
+            messageList.appendAndSend(command: "stop")
+        }
+    }
+
+    private func processBookLoadedChange(newValue: Bool) {
+        if newValue {
+            syncBookState()
+        }
+    }
+
+    private func processEyeStatusChange(newEyeStatus: EyeStatus) {
+        if newEyeStatus == .book {
+            syncBookState()
+        }
+    }
+
+    private func handleDrop(providers: [NSItemProvider]) -> Bool {
+        var foundMatch = false
+        for provider in providers {
+            let typeIdentifier = provider.registeredTypeIdentifiers.first {
+                $0 == sgfType.identifier || $0 == UTType.utf8PlainText.identifier || $0 == UTType.fileURL.identifier
+            }
+            guard let typeIdentifier else { continue }
+            provider.loadFileRepresentation(forTypeIdentifier: typeIdentifier) { url, _ in
+                // Read file NOW — the temp file is deleted when this closure returns
+                guard let url,
+                      let content = GameRecord.readSgfContent(from: url) else { return }
+                Task { @MainActor in
+                    importAndSelect(sgf: content.sgf, name: content.name)
+                }
+            }
+            foundMatch = true
+        }
+        return foundMatch
+    }
+
     // Handles file import from the document picker
     private func importFiles(result: Result<[URL], any Error>) {
         guard case .success(let files) = result else { return }
+        files.forEach { importAndSelect(from: $0) }
+    }
 
-        files.forEach { file in
-            if let result = GameRecord.importGameRecord(from: file, in: modelContext) {
-                if result.isNew {
-                    modelContext.insert(result.gameRecord)
-                }
-                navigationContext.selectedGameRecord = result.gameRecord
-            }
+    private func importAndSelect(from file: URL) {
+        if let result = GameRecord.importGameRecord(from: file, in: modelContext) {
+            insertAndSelect(result: result)
         }
+    }
+
+    private func importAndSelect(sgf: String, name: String) {
+        if let result = GameRecord.importGameRecord(sgf: sgf, name: name, in: modelContext) {
+            insertAndSelect(result: result)
+        }
+    }
+
+    private func insertAndSelect(result: (gameRecord: GameRecord, isNew: Bool)) {
+        if result.isNew {
+            modelContext.insert(result.gameRecord)
+        }
+        navigationContext.selectedGameRecord = result.gameRecord
     }
 
     private func processChange(oldGameRecord: GameRecord?, newGameRecord: GameRecord?) {

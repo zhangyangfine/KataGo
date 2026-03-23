@@ -366,13 +366,16 @@ final class GameRecord {
 
     /// Reads SGF string content and filename from a URL without creating a GameRecord.
     class func readSgfContent(from file: URL) -> (sgf: String, name: String)? {
-        guard file.startAccessingSecurityScopedResource() else { return nil }
+        let hasSecurityAccess = file.startAccessingSecurityScopedResource()
+        defer {
+            if hasSecurityAccess {
+                file.stopAccessingSecurityScopedResource()
+            }
+        }
         let name = file.deletingPathExtension().lastPathComponent
         guard let fileContents = try? String(contentsOf: file, encoding: .utf8) else {
-            file.stopAccessingSecurityScopedResource()
             return nil
         }
-        file.stopAccessingSecurityScopedResource()
         return (sgf: fileContents, name: name)
     }
 
@@ -386,22 +389,26 @@ final class GameRecord {
     /// The caller must insert the record into the model context when `isNew` is true.
     class func importGameRecord(from file: URL, in modelContext: ModelContext) -> (gameRecord: GameRecord, isNew: Bool)? {
         guard let content = readSgfContent(from: file) else { return nil }
+        return importGameRecord(sgf: content.sgf, name: content.name, in: modelContext)
+    }
 
-        if let existing = findExistingGameRecord(withSgf: content.sgf, in: modelContext) {
+    /// Imports a game from pre-read SGF content, checking for duplicates.
+    /// The caller must insert the record into the model context when `isNew` is true.
+    class func importGameRecord(sgf: String, name: String, in modelContext: ModelContext) -> (gameRecord: GameRecord, isNew: Bool)? {
+        if let existing = findExistingGameRecord(withSgf: sgf, in: modelContext) {
             return (gameRecord: existing, isNew: false)
         }
 
-        // No duplicate — create new record
-        let sgfHelper = SgfHelper(sgf: content.sgf)
+        let sgfHelper = SgfHelper(sgf: sgf)
         guard let moveSize = sgfHelper.moveSize else { return nil }
 
         let comments = (0...moveSize)
             .compactMap { index in sgfHelper.getComment(at: index).flatMap { !$0.isEmpty ? (index, $0) : nil } }
             .reduce(into: [:]) { $0[$1.0] = $1.1 }
 
-        let newRecord = GameRecord.createGameRecord(sgf: content.sgf,
+        let newRecord = GameRecord.createGameRecord(sgf: sgf,
                                                     currentIndex: moveSize,
-                                                    name: content.name,
+                                                    name: name,
                                                     comments: comments)
         return (gameRecord: newRecord, isNew: true)
     }
