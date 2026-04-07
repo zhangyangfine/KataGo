@@ -14,11 +14,8 @@ using namespace std;
 
 void KataGoRunGtp(string modelPath,
                   string humanModelPath,
-                  string coremlModelPath,
-                  string humanCoremlModelPath,
                   string configPath,
-                  int coremlDeviceToUse,
-                  int gtpForceNNSize,
+                  int metalDeviceToUse,
                   int numSearchThreads,
                   int nnMaxBatchSize);
 

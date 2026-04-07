@@ -8,7 +8,7 @@
 #include "KataGoCpp.hpp"
 
 #include "../../../cpp/main.h"
-#include "../../../cpp/neuralnet/coremlbackend.h"
+#include "../../../cpp/neuralnet/metalbackend.h"
 
 using namespace std;
 
@@ -69,11 +69,8 @@ ostream outToKataGo(&tsbToKataGo);
 
 void KataGoRunGtp(string modelPath,
                   string humanModelPath,
-                  string coremlModelPath,
-                  string humanCoremlModelPath,
                   string configPath,
-                  int coremlDeviceToUse,
-                  int gtpForceNNSize,
+                  int metalDeviceToUse,
                   int numSearchThreads,
                   int nnMaxBatchSize) {
     // Replace the global cout object with the custom one
@@ -90,18 +87,10 @@ void KataGoRunGtp(string modelPath,
     subArgs.push_back(modelPath);
     subArgs.push_back(string("-human-model"));
     subArgs.push_back(humanModelPath);
-    subArgs.push_back(string("-coreml-model"));
-    subArgs.push_back(coremlModelPath);
-    subArgs.push_back(string("-human-coreml-model"));
-    subArgs.push_back(humanCoremlModelPath);
     subArgs.push_back(string("-config"));
     subArgs.push_back(configPath);
-    subArgs.push_back(string("-override-config coremlDeviceToUse=") + to_string(coremlDeviceToUse));
-
-    if (gtpForceNNSize > 0) {
-        subArgs.push_back(string("-override-config gtpForceNNSize=") + to_string(gtpForceNNSize));
-    }
-
+    subArgs.push_back(string("-override-config metalDeviceToUseThread0=") + to_string(metalDeviceToUse));
+    subArgs.push_back(string("-override-config metalUseFP16=true"));
     subArgs.push_back(string("-override-config numSearchThreads=") + to_string(numSearchThreads));
     subArgs.push_back(string("-override-config nnMaxBatchSize=") + to_string(nnMaxBatchSize));
     MainCmds::gtp(subArgs);
