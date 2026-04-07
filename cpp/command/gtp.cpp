@@ -51,7 +51,6 @@ static const vector<string> knownCommands = {
   "kata-get-param",
   "kata-set-param",
   "kata-list-params",
-  "kata-check-move",
   "kgs-rules",
 
   "genmove",
@@ -337,9 +336,7 @@ struct GTPEngine {
   GTPEngine& operator=(const GTPEngine&) = delete;
 
   const string nnModelFile;
-  const string coreMLModelFile;
   const string humanModelFile;
-  const string humanCoreMLModelFile;
   const bool assumeMultipleStartingBlackMovesAreHandicap;
   const int analysisPVLen;
   const bool preventEncore;
@@ -389,8 +386,7 @@ struct GTPEngine {
   std::vector<Sgf::PositionSample> genmoveSamples;
 
   GTPEngine(
-    const string& modelFile, const string& coreMLModelFile,
-    const string& hModelFile, const string& hCoreMLModelFile,
+    const string& modelFile, const string& hModelFile,
     SearchParams initialGenmoveParams, SearchParams initialAnalysisParams,
     Rules initialRules,
     bool assumeMultiBlackHandicap, bool prevtEncore, bool autoPattern,
@@ -401,9 +397,7 @@ struct GTPEngine {
     std::unique_ptr<PatternBonusTable>&& pbTable
   )
     :nnModelFile(modelFile),
-     coreMLModelFile(coreMLModelFile),
      humanModelFile(hModelFile),
-     humanCoreMLModelFile(hCoreMLModelFile),
      assumeMultipleStartingBlackMovesAreHandicap(assumeMultiBlackHandicap),
      analysisPVLen(pvLen),
      preventEncore(prevtEncore),
@@ -479,12 +473,6 @@ struct GTPEngine {
       nnYLen = Board::MAX_LEN;
     }
 
-    if (cfg.contains("gtpForceNNSize")) {
-      defaultRequireExactNNLen = false;
-      nnXLen = cfg.getInt("gtpForceNNSize");
-      nnYLen = nnXLen;
-    }
-
     //If the neural net is wrongly sized, we need to create or recreate it
     if(nnEval == NULL || !(nnXLen == nnEval->getNNXLen() && nnYLen == nnEval->getNNYLen())) {
 
@@ -504,15 +492,15 @@ struct GTPEngine {
       const int defaultMaxBatchSize = std::max(8,((expectedConcurrentEvals+3)/4)*4);
       const bool disableFP16 = false;
       const string expectedSha256 = "";
-      nnEval = Setup::initializeCoreMLEvaluator(
-        nnModelFile,nnModelFile,coreMLModelFile,expectedSha256,cfg,logger,seedRand,expectedConcurrentEvals,
+      nnEval = Setup::initializeNNEvaluator(
+        nnModelFile,nnModelFile,expectedSha256,cfg,logger,seedRand,expectedConcurrentEvals,
         nnXLen,nnYLen,defaultMaxBatchSize,defaultRequireExactNNLen,disableFP16,
         Setup::SETUP_FOR_GTP
       );
       logger.write("Loaded neural net with nnXLen " + Global::intToString(nnEval->getNNXLen()) + " nnYLen " + Global::intToString(nnEval->getNNYLen()));
       if(humanModelFile != "") {
-        humanEval = Setup::initializeCoreMLEvaluator(
-          humanModelFile,humanModelFile,humanCoreMLModelFile,expectedSha256,cfg,logger,seedRand,expectedConcurrentEvals,
+        humanEval = Setup::initializeNNEvaluator(
+          humanModelFile,humanModelFile,expectedSha256,cfg,logger,seedRand,expectedConcurrentEvals,
           nnXLen,nnYLen,defaultMaxBatchSize,defaultRequireExactNNLen,disableFP16,
           Setup::SETUP_FOR_GTP
         );
@@ -1905,17 +1893,13 @@ int MainCmds::gtp(const vector<string>& args) {
 
   ConfigParser cfg;
   string nnModelFile;
-  string coreMLModelFile;
   string humanModelFile;
-  string humanCoreMLModelFile;
   string overrideVersion;
   KataGoCommandLine cmd("Run KataGo main GTP engine for playing games or casual analysis.");
   try {
     cmd.addConfigFileArg(KataGoCommandLine::defaultGtpConfigFileName(),"gtp_example.cfg");
     cmd.addModelFileArg();
-    cmd.addCoreMLModelFileArg();
     cmd.addHumanModelFileArg();
-    cmd.addHumanCoreMLModelFileArg();
     cmd.setShortUsageArgLimit();
     cmd.addOverrideConfigArg();
 
@@ -1923,9 +1907,7 @@ int MainCmds::gtp(const vector<string>& args) {
     cmd.add(overrideVersionArg);
     cmd.parseArgs(args);
     nnModelFile = cmd.getModelFile();
-    coreMLModelFile = cmd.getCoreMLModelFile();
     humanModelFile = cmd.getHumanModelFile();
-    humanCoreMLModelFile = cmd.getHumanCoreMLModelFile();
     overrideVersion = overrideVersionArg.getValue();
 
     cmd.getConfig(cfg);
@@ -2061,7 +2043,7 @@ int MainCmds::gtp(const vector<string>& args) {
   Player perspective = Setup::parseReportAnalysisWinrates(cfg,C_EMPTY);
 
   GTPEngine* engine = new GTPEngine(
-    nnModelFile,coreMLModelFile,humanModelFile,humanCoreMLModelFile,
+    nnModelFile,humanModelFile,
     initialGenmoveParams,initialAnalysisParams,
     initialRules,
     assumeMultipleStartingBlackMovesAreHandicap,preventEncore,autoAvoidPatterns,
@@ -2498,42 +2480,6 @@ int MainCmds::gtp(const vector<string>& args) {
         paramsList.push_back(elt.key());
       }
       response = Global::concat(paramsList, " ");
-    }
-
-    else if(command == "kata-check-move") {
-      if(pieces.size() != 2) {
-        responseIsError = true;
-        response = "Expected two arguments for kata-check-move (color vertex) but got '" + Global::concat(pieces," ") + "'";
-      }
-      else {
-        Player pla;
-        Loc loc;
-
-        if(!PlayerIO::tryParsePlayer(pieces[0], pla)) {
-          responseIsError = true;
-          response = "Could not parse color: '" + pieces[0] + "'";
-        }
-        else if(!tryParseLoc(pieces[1], engine->bot->getRootBoard(), loc)) {
-          responseIsError = true;
-          response = "Could not parse vertex: '" + pieces[1] + "'";
-        }
-        else {
-          const Board& board = engine->bot->getRootBoard();
-          const BoardHistory& hist = engine->bot->getRootHist();
-
-          nlohmann::json result;
-          result["vertex"] = (loc == Board::PASS_LOC) ? "pass" : Location::toString(loc, board);
-          result["color"] = PlayerIO::playerToStringShort(pla);
-
-          PlayUtils::CheckMoveResult checkResult = PlayUtils::checkMoveLegality(board, hist, loc, pla);
-          result["isLegal"] = checkResult.isLegal;
-          if(!checkResult.isLegal) {
-            result["reason"] = checkResult.reason;
-          }
-
-          response = result.dump();
-        }
-      }
     }
 
     else if(command == "kata-get-param") {

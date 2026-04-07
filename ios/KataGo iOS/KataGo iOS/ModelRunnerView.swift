@@ -34,37 +34,28 @@ struct ModelRunnerView: View {
             if let selectedModel {
                 selectedModelTitle = selectedModel.title
 
+                let modelPath: String?
                 if selectedModel.builtIn {
-                    // Start KataGo with the built-in model
-                    startKataGoThread(coremlModelPath: selectedModel.url,
-                                      humanCoremlModelPath: selectedModel.humanUrl,
-                                      nnLen: selectedModel.nnLen)
+                    // Built-in model is bundled as .bin.gz in the app bundle
+                    modelPath = Bundle.main.path(forResource: "default_model", ofType: "bin.gz")
                 } else {
-                    if let downloadedURL = selectedModel.downloadedURL {
-                        startKataGoThread(modelPath: downloadedURL.path(),
-                                          useMetal: !selectedModel.builtIn,
-                                          nnLen: selectedModel.nnLen)
-                    } else {
-                        // Failed to get model URL, go back to the model picker view
-                        self.selectedModel = nil
-                    }
+                    modelPath = selectedModel.downloadedURL?.path()
+                }
+
+                if let modelPath {
+                    startKataGoThread(modelPath: modelPath)
+                } else {
+                    // Failed to get model URL, go back to the model picker view
+                    self.selectedModel = nil
                 }
             }
         }
     }
 
-    private func startKataGoThread(modelPath: String? = nil,
-                                   useMetal: Bool = false,
-                                   coremlModelPath: String? = nil,
-                                   humanCoremlModelPath: String? = nil,
-                                   nnLen: Int) {
+    private func startKataGoThread(modelPath: String) {
         // Start a thread to run KataGo GTP
         let katagoThread = Thread {
-            KataGoHelper.runGtp(modelPath: modelPath,
-                                useMetal: useMetal,
-                                coremlModelPath: coremlModelPath,
-                                humanCoremlModelPath: humanCoremlModelPath,
-                                nnLen: nnLen)
+            KataGoHelper.runGtp(modelPath: modelPath)
 
             Task {
                 await MainActor.run {

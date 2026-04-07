@@ -16,7 +16,6 @@ struct NeuralNetworkModel: Identifiable, Equatable {
     let fileSize: Int
     let builtIn: Bool
     let nnLen: Int
-    let humanUrl: String
 
     var downloadedURL: URL? {
         return URL.documentsDirectory.appendingPathComponent(fileName)
@@ -31,7 +30,6 @@ struct NeuralNetworkModel: Identifiable, Equatable {
     ///   - title: the title of the model
     ///   - description: the description of the model
     ///   - url: the URL of the model
-    ///   - humanUrl: the URL of the human SL model   s
     ///   - fileName: the file name of the model
     ///   - fileSize: the file size of the model
     ///   - builtIn: a flag to indicate that the model is built-in or not
@@ -39,7 +37,6 @@ struct NeuralNetworkModel: Identifiable, Equatable {
     init(title: String,
          description: String,
          url: String,
-         humanUrl: String = "",
          fileName: String,
          fileSize: Int,
          builtIn: Bool = false,
@@ -52,7 +49,6 @@ struct NeuralNetworkModel: Identifiable, Equatable {
         self.fileSize = fileSize
         self.builtIn = builtIn
         self.nnLen = nnLen
-        self.humanUrl = humanUrl
     }
 
     static var builtInModel: NeuralNetworkModel? {
@@ -61,27 +57,24 @@ struct NeuralNetworkModel: Identifiable, Equatable {
 
     static let allCases: [NeuralNetworkModel] = [
         .init(
-            title: "Built-in KataGo Core ML model",
+            title: "Built-in KataGo 18b Network",
             description: """
-This model is based on the strongest network from KataGo's distributed training and has been converted to Core ML with 16-bit operations. It's optimized to run efficiently on Apple devices using the Neural Engine for board sizes up to 19x19.
+This model is a strong 18-block network from KataGo's distributed training. It runs using the Metal backend which automatically converts to CoreML for efficient inference on Apple devices using the Neural Engine (iOS) or GPU (macOS).
 
-Name: kata1-b28c512nbt-adam-s11165M-d5387M.
-Uploaded at: 2025-10-02 01:23:42 UTC.
-Elo Rating: 14082.9 ± 9.7 - (6812 games).
+Name: kata1-b18c384nbt-s9996604416-d4316597426.
+Uploaded at: 2024-10-07 UTC.
 
-Board sizes: 2x2 to 19x19.
+Board sizes: 2x2 to 37x37.
 """,
-            url: Bundle.main.path(forResource: "KataGoModel19x19fp16", ofType: "mlpackage") ?? "",
-            humanUrl: Bundle.main.path(forResource: "KataGoModel19x19fp16m1", ofType: "mlpackage") ?? "",
-            fileName: "builtin.bin.gz",
-            fileSize: 271_357_345,
-            builtIn: true,
-            nnLen: 19
+            url: "",
+            fileName: "default_model.bin.gz",
+            fileSize: 97_878_277,
+            builtIn: true
         ),
         .init(
             title: "Official KataGo Network",
             description: """
-This is the strongest confidently-rated network in KataGo distributed training. It runs using the GPU and may offer faster performance than the Core ML model on high-end Macs.
+This is the strongest confidently-rated network in KataGo distributed training. It runs using the Metal backend and may offer faster performance than the built-in model on high-end Macs.
 
 This app will irregularly update the URL for the strongest confidently-rated network. If a new network becomes available, you can keep using your current one or manually switch by deleting it and downloading the latest version.
 

@@ -83,9 +83,8 @@ struct LoadedModel {
   LoadedModel& operator=(const LoadedModel&) = delete;
 };
 
-LoadedModel* NeuralNet::loadModelFile(const string& file, const string& expectedSha256, const string& dir) {
+LoadedModel* NeuralNet::loadModelFile(const string& file, const string& expectedSha256) {
   LoadedModel* loadedModel = new LoadedModel(file,expectedSha256);
-  (void)dir;
   return loadedModel;
 }
 
