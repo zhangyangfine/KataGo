@@ -12,26 +12,24 @@ public class KataGoHelper {
 #if os(macOS)
     static let metalNumSearchThreads = 16
     static let metalNnMaxBatchSize = 8
+    static let metalDeviceToUse = 0       // GPU (MPSGraph) on macOS
 #else
     static let metalNumSearchThreads = 2
     static let metalNnMaxBatchSize = 1
+    static let metalDeviceToUse = 100     // ANE (Neural Engine) on iOS/visionOS
 #endif
 
-    public class func runGtp(modelPath: String? = nil,
-                             useMetal: Bool = false,
-                             coremlModelPath: String? = nil,
-                             humanCoremlModelPath: String? = nil,
-                             nnLen: Int) {
+    public class func runGtp(modelPath: String? = nil) {
         let mainBundle = Bundle.main
         let modelName = "default_model"
         let modelExt = "bin.gz"
-        
+
         let mainModelPath = modelPath ?? mainBundle.path(forResource: modelName,
                                                          ofType: modelExt)
-        
+
         let humanModelName = "b18c384nbt-humanv0"
         let humanModelExt = "bin.gz"
-        
+
         let humanModelPath = mainBundle.path(forResource: humanModelName,
                                              ofType: humanModelExt)
 
@@ -41,20 +39,12 @@ public class KataGoHelper {
         let configPath = mainBundle.path(forResource: configName,
                                          ofType: configExt)
 
-        let coremlDeviceToUse = useMetal ? 0 : 100
-        let gtpForceNNSize = useMetal ? 0 : nnLen
-        let numSearchThreads = useMetal ? metalNumSearchThreads : 2
-        let nnMaxBatchSize = useMetal ? metalNnMaxBatchSize : 1
-
         KataGoRunGtp(std.string(mainModelPath),
                      std.string(humanModelPath),
-                     std.string(coremlModelPath ?? ""),
-                     std.string(humanCoremlModelPath ?? ""),
                      std.string(configPath),
-                     Int32(coremlDeviceToUse),
-                     Int32(gtpForceNNSize),
-                     Int32(numSearchThreads),
-                     Int32(nnMaxBatchSize))
+                     Int32(metalDeviceToUse),
+                     Int32(metalNumSearchThreads),
+                     Int32(metalNnMaxBatchSize))
     }
 
     public class func getMessageLine() -> String {

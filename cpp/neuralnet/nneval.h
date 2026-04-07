@@ -102,31 +102,6 @@ class NNEvaluator {
     bool doRandomize,
     int defaultSymmetry
   );
-  NNEvaluator(
-    const std::string& modelName,
-    const std::string& modelFileName,
-    const std::string& modelDir,
-    const std::string& expectedSha256,
-    Logger* logger,
-    int maxBatchSize,
-    int nnXLen,
-    int nnYLen,
-    bool requireExactNNLen,
-    bool inputsUseNHWC,
-    int nnCacheSizePowerOfTwo,
-    int nnMutexPoolSizePowerofTwo,
-    bool debugSkipNeuralNet,
-    const std::string& openCLTunerFile,
-    const std::string& homeDataDirOverride,
-    bool openCLReTunePerBoardSize,
-    enabled_t useFP16Mode,
-    enabled_t useNHWCMode,
-    int numThreads,
-    const std::vector<int>& gpuIdxByServerThread,
-    const std::string& randSeed,
-    bool doRandomize,
-    int defaultSymmetry
-  );
   ~NNEvaluator();
 
   NNEvaluator(const NNEvaluator& other) = delete;
@@ -235,7 +210,6 @@ class NNEvaluator {
  private:
   const std::string modelName;
   const std::string modelFileName;
-  const std::string modelDirName;
   const int nnXLen;
   const int nnYLen;
   const bool requireExactNNLen;

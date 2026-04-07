@@ -32,7 +32,7 @@ endif()
 set(BUILD_DISTRIBUTED 0 CACHE BOOL "Build with http support for contributing to distributed training")
 set(USE_BACKEND CACHE STRING "Neural net backend")
 string(TOUPPER "${USE_BACKEND}" USE_BACKEND)
-set_property(CACHE USE_BACKEND PROPERTY STRINGS "" CUDA TENSORRT OPENCL EIGEN)
+set_property(CACHE USE_BACKEND PROPERTY STRINGS "" CUDA TENSORRT OPENCL EIGEN METAL)
 
 set(USE_TCMALLOC 0 CACHE BOOL "Use TCMalloc")
 set(NO_GIT_REVISION 0 CACHE BOOL "Disable embedding the git revision into the compiled exe")
@@ -97,7 +97,7 @@ elseif(USE_BACKEND STREQUAL "TENSORRT")
     message(FATAL_ERROR "Combining USE_CACHE_TENSORRT_PLAN with BUILD_DISTRIBUTED is not supported - it would consume excessive disk space and might worsen performance every time models are updated. Use only one at a time in a given build of KataGo.")
   endif()
 elseif(USE_BACKEND STREQUAL "METAL")
-  message(STATUS "-DUSE_BACKEND=METAL, using Metal backend.")
+  message(STATUS "-DUSE_BACKEND=METAL, using Metal backend with hybrid MPSGraph + CoreML execution.")
   if(NOT "${CMAKE_GENERATOR}" STREQUAL "Ninja")
     message(FATAL_ERROR "Bidirectional C++ Interop requires Ninja generator. Have ${CMAKE_GENERATOR}")
   endif()
@@ -107,12 +107,8 @@ elseif(USE_BACKEND STREQUAL "METAL")
   if(NOT "${CMAKE_CXX_COMPILER_ID}" STREQUAL "AppleClang")
     message(FATAL_ERROR "Project requires building with AppleClang. Have ${CMAKE_CXX_COMPILER_ID}")
   endif()
+  add_subdirectory(external/katagocoreml)
   list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/external/macos/cmake/modules")
-
-  if (NOT CMAKE_OSX_SYSROOT)
-    execute_process(COMMAND xcrun --show-sdk-path OUTPUT_VARIABLE CMAKE_OSX_SYSROOT OUTPUT_STRIP_TRAILING_WHITESPACE)
-  endif()
-
   include(InitializeSwift)
   include(AddSwift)
   set(CMAKE_OSX_DEPLOYMENT_TARGET 13.0)
@@ -120,11 +116,11 @@ elseif(USE_BACKEND STREQUAL "METAL")
     neuralnet/metalbackend.cpp
     )
   add_library(KataGoSwift STATIC
-    neuralnet/metalbackend.swift)
+    neuralnet/metalbackend.swift
+    neuralnet/metallayers.swift)
   _swift_generate_cxx_header(
     KataGoSwift
-    "${CMAKE_CURRENT_BINARY_DIR}/include/KataGoSwift/KataGoSwift-swift.h"
-    SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/neuralnet/metalbackend.swift")
+    "${CMAKE_CURRENT_BINARY_DIR}/include/KataGoSwift/KataGoSwift-swift.h")
   target_include_directories(KataGoSwift PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/include")
   set_target_properties(KataGoSwift PROPERTIES Swift_MODULE_NAME "KataGoSwift")
   target_compile_options(KataGoSwift PUBLIC
@@ -346,6 +342,7 @@ elseif(USE_BACKEND STREQUAL "TENSORRT")
   if((NOT TENSORRT_INCLUDE_DIR))
     message(FATAL_ERROR "${ColorBoldRed} NvInfer.h was NOT found, specify TENSORRT_INCLUDE_DIR to indicate where it is. ${ColorReset}")
   endif()
+  find_library(TENSORRT_LIBRARY nvinfer HINTS ${TENSORRT_ROOT_DIR} PATH_SUFFIXES lib)
 
   # Hackily extract out the version from the TensorRT header
   # In each case, try the old format and on failure try the new format.
@@ -392,8 +389,6 @@ elseif(USE_BACKEND STREQUAL "TENSORRT")
     message(FATAL_ERROR "Could not determine TensorRT version from header file")
   endif()
 
-  find_library(TENSORRT_LIBRARY NAMES nvinfer nvinfer_${TENSORRT_VERSION_MAJOR} HINTS ${TENSORRT_ROOT_DIR} PATH_SUFFIXES lib)
-
   # Version 8 is required for serializing the builder timing cache.
   # Version 8.2 is required for eliminating the global logger for Builder and Runtime.
   # Version 8.5 is required for eliminating many deprecated APIs and adopting new features.
@@ -405,9 +400,12 @@ elseif(USE_BACKEND STREQUAL "TENSORRT")
   target_link_libraries(katago CUDA::cudart_static ${TENSORRT_LIBRARY})
 elseif(USE_BACKEND STREQUAL "METAL")
   target_compile_definitions(katago PRIVATE USE_METAL_BACKEND)
-  target_link_libraries(katago KataGoSwift)
+  target_link_libraries(katago KataGoSwift katagocoreml
+    ${KATAGOCOREML_DEP_LDFLAGS}
+    "-framework MetalPerformanceShaders"
+    "-framework MetalPerformanceShadersGraph")
   if("${CMAKE_SYSTEM_PROCESSOR}" STREQUAL "x86_64")
-    message(WARNING "You are currently running cmake on an Intel-based processor. It is known that running KataGo in this configuration may encounter performance issues. It is recommended to switch to a cmake version designed for ARM64 architecture for optimal performance.")
+    message(WARNING "Metal backend may not work optimally on Intel. ARM64 architecture is recommended.")
   endif()
 elseif(USE_BACKEND STREQUAL "OPENCL")
   target_compile_definitions(katago PRIVATE USE_OPENCL_BACKEND)
@@ -432,8 +430,8 @@ elseif(USE_BACKEND STREQUAL "EIGEN")
   target_compile_definitions(katago PRIVATE USE_EIGEN_BACKEND)
   if(NOT (MSVC))
     find_package(Eigen3 REQUIRED)
-    target_link_libraries(katago Eigen3::Eigen)
-    message(STATUS "Found Eigen3")
+    include_directories(SYSTEM ${EIGEN3_INCLUDE_DIRS})
+    message(STATUS "Found Eigen3 at ${EIGEN3_INCLUDE_DIRS}")
   else()
     if(EIGEN3_INCLUDE_DIRS)
       message(STATUS "EIGEN3_INCLUDE_DIRS is set to ${EIGEN3_INCLUDE_DIRS}, assuming that Eigen3 header files are here.")
