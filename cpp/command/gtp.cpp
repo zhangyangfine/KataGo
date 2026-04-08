@@ -51,6 +51,7 @@ static const vector<string> knownCommands = {
   "kata-get-param",
   "kata-set-param",
   "kata-list-params",
+  "kata-check-move",
   "kgs-rules",
 
   "genmove",
@@ -2480,6 +2481,42 @@ int MainCmds::gtp(const vector<string>& args) {
         paramsList.push_back(elt.key());
       }
       response = Global::concat(paramsList, " ");
+    }
+
+    else if(command == "kata-check-move") {
+      if(pieces.size() != 2) {
+        responseIsError = true;
+        response = "Expected two arguments for kata-check-move (color vertex) but got '" + Global::concat(pieces," ") + "'";
+      }
+      else {
+        Player pla;
+        Loc loc;
+
+        if(!PlayerIO::tryParsePlayer(pieces[0], pla)) {
+          responseIsError = true;
+          response = "Could not parse color: '" + pieces[0] + "'";
+        }
+        else if(!tryParseLoc(pieces[1], engine->bot->getRootBoard(), loc)) {
+          responseIsError = true;
+          response = "Could not parse vertex: '" + pieces[1] + "'";
+        }
+        else {
+          const Board& board = engine->bot->getRootBoard();
+          const BoardHistory& hist = engine->bot->getRootHist();
+
+          nlohmann::json result;
+          result["vertex"] = (loc == Board::PASS_LOC) ? "pass" : Location::toString(loc, board);
+          result["color"] = PlayerIO::playerToStringShort(pla);
+
+          PlayUtils::CheckMoveResult checkResult = PlayUtils::checkMoveLegality(board, hist, loc, pla);
+          result["isLegal"] = checkResult.isLegal;
+          if(!checkResult.isLegal) {
+            result["reason"] = checkResult.reason;
+          }
+
+          response = result.dump();
+        }
+      }
     }
 
     else if(command == "kata-get-param") {

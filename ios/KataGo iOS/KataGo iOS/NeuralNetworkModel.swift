@@ -57,12 +57,13 @@ struct NeuralNetworkModel: Identifiable, Equatable {
 
     static let allCases: [NeuralNetworkModel] = [
         .init(
-            title: "Built-in KataGo 18b Network",
+            title: "Built-in KataGo Network",
             description: """
 This model is a strong 18-block network from KataGo's distributed training. It runs using the Metal backend which automatically converts to CoreML for efficient inference on Apple devices using the Neural Engine (iOS) or GPU (macOS).
 
 Name: kata1-b18c384nbt-s9996604416-d4316597426.
-Uploaded at: 2024-10-07 UTC.
+Uploaded at: 2024-05-26 12:47:48 UTC.
+Elo Rating: 13621.9 ± 14.4 - (3672 games).
 
 Board sizes: 2x2 to 37x37.
 """,

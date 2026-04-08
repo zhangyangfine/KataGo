@@ -39,9 +39,9 @@ public class KataGoHelper {
         let configPath = mainBundle.path(forResource: configName,
                                          ofType: configExt)
 
-        KataGoRunGtp(std.string(mainModelPath),
-                     std.string(humanModelPath),
-                     std.string(configPath),
+        KataGoRunGtp(std.string(mainModelPath ?? "Contents/Resources/default_model.bin.gz"),
+                     std.string(humanModelPath ?? "Contents/Resources/b18c384nbt-humanv0.bin.gz"),
+                     std.string(configPath ?? "Contents/Resources/default_gtp.cfg"),
                      Int32(metalDeviceToUse),
                      Int32(metalNumSearchThreads),
                      Int32(metalNnMaxBatchSize))
