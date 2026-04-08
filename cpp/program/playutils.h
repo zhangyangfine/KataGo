@@ -8,6 +8,13 @@
 //This is a grab-bag of various useful higher-level functions that select moves or evaluate the board in various ways.
 
 namespace PlayUtils {
+  //Check whether a move is legal and return the reason if not.
+  struct CheckMoveResult {
+    bool isLegal = true;
+    std::string reason; // empty if legal; values: "out_of_bounds", "occupied", "ko", "suicide", "superko", "wrong_turn"
+  };
+  CheckMoveResult checkMoveLegality(const Board& board, const BoardHistory& hist, Loc loc, Player pla);
+
   //Use the given bot to play free handicap stones, modifying the board and hist in the process and setting the bot's position to it.
   //Does NOT switch the initial player of the board history to white
   void playExtraBlack(

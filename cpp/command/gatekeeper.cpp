@@ -395,6 +395,7 @@ int MainCmds::gatekeeper(const vector<string>& args) {
     string acceptedModelDir;
     time_t acceptedModelTime;
     foundModel = LoadModel::findLatestModel(acceptedModelsDir, logger, acceptedModelName, acceptedModelFile, acceptedModelDir, acceptedModelTime);
+    (void)acceptedModelDir;
     if(!foundModel) {
       logger.write("Error: No accepted model found in " + acceptedModelsDir);
       return NULL;
@@ -412,15 +413,15 @@ int MainCmds::gatekeeper(const vector<string>& args) {
     const bool disableFP16 = false;
     const string expectedSha256 = "";
 
-    NNEvaluator* testNNEval = Setup::initializeCoreMLEvaluator(
-      testModelName,testModelFile,testModelDir,expectedSha256,cfg,logger,rand,expectedConcurrentEvals,
+    NNEvaluator* testNNEval = Setup::initializeNNEvaluator(
+      testModelName,testModelFile,expectedSha256,cfg,logger,rand,expectedConcurrentEvals,
       maxBoardXSizeUsed,maxBoardYSizeUsed,defaultMaxBatchSize,defaultRequireExactNNLen,disableFP16,
       Setup::SETUP_FOR_OTHER
     );
     logger.write("Loaded candidate neural net " + testModelName + " from: " + testModelFile);
 
-    NNEvaluator* acceptedNNEval = Setup::initializeCoreMLEvaluator(
-      acceptedModelName,acceptedModelFile,acceptedModelDir,expectedSha256,cfg,logger,rand,expectedConcurrentEvals,
+    NNEvaluator* acceptedNNEval = Setup::initializeNNEvaluator(
+      acceptedModelName,acceptedModelFile,expectedSha256,cfg,logger,rand,expectedConcurrentEvals,
       maxBoardXSizeUsed,maxBoardYSizeUsed,defaultMaxBatchSize,defaultRequireExactNNLen,disableFP16,
       Setup::SETUP_FOR_OTHER
     );
