@@ -7,54 +7,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  xcodebuild:
-    runs-on: macos-15
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Run Xcode build
-      run: |
-        cd cpp/xcode
-        xcodebuild -derivedDataPath DerivedData -scheme katago -configuration Debug build
-
-    - name: Setup configuration
-      run: |
-        ln -s ../../../../../configs/misc/coreml_example.cfg cpp/xcode/DerivedData/Build/Products/Debug/gtp.cfg
-        ln -s ../../../../../configs/misc/metal_gtp.cfg cpp/xcode/DerivedData/Build/Products/Debug/metal_gtp.cfg
-
-    - name: Setup network
-      run: |
-        mkdir -p models
-        cd models
-        wget https://github.com/ChinChangYang/KataGo/releases/download/v1.15.1-coreml2/kata1-b18c384nbt-s9996604416-d4316597426.bin.gz
-        ln -s ../../../../../../models/kata1-b18c384nbt-s9996604416-d4316597426.bin.gz ../cpp/xcode/DerivedData/Build/Products/Debug/model.bin.gz
-
-    - name: Setup network of version 8
-      run: |
-        mkdir -p models
-        cd models
-        wget https://github.com/lightvector/KataGo/releases/download/v1.4.5/g170-b40c256x2-s5095420928-d1229425124.bin.gz
-        ln -s ../../../../../../models/g170-b40c256x2-s5095420928-d1229425124.bin.gz ../cpp/xcode/DerivedData/Build/Products/Debug/modelv8.bin.gz
-
-    - name: Setup test data
-      run: |
-        ln -s ../../../../../tests cpp/xcode/DerivedData/Build/Products/Debug/tests
-
-    - name: Run Xcode test
-      run: |
-        cd cpp/xcode
-        xcodebuild -derivedDataPath DerivedData -scheme katago -configuration Debug test
-
-    - name: Run KataGo tests
-      run: |
-        cd cpp/xcode/DerivedData/Build/Products/Debug
-        # ./katago runnnlayertests
-        ./katago runoutputtests
-        ./katago runnnontinyboardtest model.bin.gz false false 0 false
-        ./katago runnnsymmetriestest model.bin.gz false false false
-        ./katago runownershiptests gtp.cfg model.bin.gz
-
   cmake-macos:
     runs-on: macos-15
     steps:
