@@ -19,7 +19,7 @@ jobs:
 
     - name: Setup Eigen
       run: |
-        brew install eigen
+        brew install eigen@3
 
     - name: Show Xcode version
       run: |
@@ -31,7 +31,7 @@ jobs:
         mkdir -p cpp/build
         cd cpp/build
         cmake --version
-        cmake -G Ninja -DUSE_BACKEND=EIGEN ../
+        cmake -G Ninja -DUSE_BACKEND=EIGEN -DEIGEN3_INCLUDE_DIRS=$(brew --prefix eigen@3)/include/eigen3 ../
         ninja
 
     - name: Setup network
