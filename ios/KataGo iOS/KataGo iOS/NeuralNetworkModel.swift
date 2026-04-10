@@ -79,15 +79,15 @@ This is the strongest confidently-rated network in KataGo distributed training. 
 
 This app will irregularly update the URL for the strongest confidently-rated network. If a new network becomes available, you can keep using your current one or manually switch by deleting it and downloading the latest version.
 
-Name: kata1-zhizi-b40c768nbt-fdx6c.
-Uploaded at: 2026-04-06 17:33:18 UTC.
-Elo Rating: 14471.2 ± 48.5 - (833 games).
+Name: kata1-zhizi-b28c512nbt-muonfd2.
+Uploaded at: 2026-03-22 15:32:56 UTC.
+Elo Rating: 14155.6 ± 13.6 - (3,551 games).
 
 Board sizes: 2x2 to 37x37.
 """,
-            url: "https://media.katagotraining.org/uploaded/networks/models/kata1/kata1-zhizi-b40c768nbt-fdx6c.bin.gz",
+            url: "https://media.katagotraining.org/uploaded/networks/models/kata1/kata1-zhizi-b28c512nbt-muonfd2.bin.gz",
             fileName: "official.bin.gz",
-            fileSize: 863_624_732
+            fileSize: 271_447_864
         ),
         .init(
             title: "FD3 Network",
