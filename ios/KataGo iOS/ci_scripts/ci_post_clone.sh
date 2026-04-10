@@ -1,16 +1,5 @@
 #!/bin/sh
 
-# Install build dependencies for katagocoreml (Metal backend model conversion)
-brew install cmake ninja protobuf abseil
-
-# Build katagocoreml for all platforms
-SCRIPTS_DIR="../scripts"
-"${SCRIPTS_DIR}/build_katagocoreml.sh" iphoneos
-"${SCRIPTS_DIR}/build_katagocoreml.sh" iphonesimulator
-"${SCRIPTS_DIR}/build_katagocoreml.sh" macosx
-"${SCRIPTS_DIR}/build_katagocoreml.sh" xros
-"${SCRIPTS_DIR}/build_katagocoreml.sh" xrsimulator
-
 # Install Metal Toolchain (required for Xcode 26+; not bundled by default)
 METAL_EXPORT_PATH="/tmp/metalToolchainExport"
 rm -rf "$METAL_EXPORT_PATH"
