@@ -154,18 +154,40 @@ struct ModelPickerView: View {
     // Final selected model
     @Binding var selectedModel: NeuralNetworkModel?
 
+    /// Title of the model whose load did not finish during the previous
+    /// launch. Empty string means no crash to display. Writing an empty
+    /// string (via the banner's Dismiss button) clears the crash-loop
+    /// sentinel that `ModelRunnerView` persists.
+    @Binding var crashedModelTitle: String
+
     var body: some View {
         NavigationStack {
             List(selection: $selectedModelID) {
-                ForEach(NeuralNetworkModel.allCases) { model in
-                    if model.visible,
-                       let destinationURL = model.downloadedURL {
-                        NavigationLink(model.title) {
-                            ModelDetailView(
-                                model: model,
-                                downloader: Downloader(destinationURL: destinationURL),
-                                selectedModel: $selectedModel
-                            )
+                if !crashedModelTitle.isEmpty {
+                    recoveryBanner(crashedTitle: crashedModelTitle)
+                }
+
+                Section {
+                    ForEach(NeuralNetworkModel.allCases) { model in
+                        if model.visible,
+                           let destinationURL = model.downloadedURL {
+                            NavigationLink {
+                                ModelDetailView(
+                                    model: model,
+                                    downloader: Downloader(destinationURL: destinationURL),
+                                    selectedModel: $selectedModel
+                                )
+                            } label: {
+                                HStack {
+                                    Text(model.title)
+                                    if model.title == crashedModelTitle {
+                                        Spacer()
+                                        Image(systemName: "exclamationmark.triangle.fill")
+                                            .foregroundStyle(.orange)
+                                            .accessibilityLabel("Did not finish loading last time")
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -184,14 +206,68 @@ struct ModelPickerView: View {
             }
         }
     }
+
+    @ViewBuilder
+    private func recoveryBanner(crashedTitle: String) -> some View {
+        Section {
+            VStack(alignment: .leading, spacing: 12) {
+                Label {
+                    Text("Last launch could not finish loading **\(crashedTitle)**.")
+                        .font(.headline)
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                }
+
+                Text("Your device may not have enough free memory for this network. The built-in network is recommended.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                HStack {
+                    Button {
+                        if let builtIn = NeuralNetworkModel.builtInModel {
+                            selectedModel = builtIn
+                        }
+                    } label: {
+                        Text("Use Built-in Network")
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    Button("Dismiss") {
+                        crashedModelTitle = ""
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+            .padding(.vertical, 4)
+        }
+    }
 }
 
 #Preview("Model Picker") {
     // A simple wrapper view to host the binding required by ModelPickerView
     struct PreviewHost: View {
         @State private var selectedModel: NeuralNetworkModel? = nil
+        @State private var crashedModelTitle = ""
         var body: some View {
-            ModelPickerView(selectedModel: $selectedModel)
+            ModelPickerView(
+                selectedModel: $selectedModel,
+                crashedModelTitle: $crashedModelTitle
+            )
+        }
+    }
+    return PreviewHost()
+}
+
+#Preview("Model Picker — Recovery Banner") {
+    struct PreviewHost: View {
+        @State private var selectedModel: NeuralNetworkModel? = nil
+        @State private var crashedModelTitle = "Official KataGo Network"
+        var body: some View {
+            ModelPickerView(
+                selectedModel: $selectedModel,
+                crashedModelTitle: $crashedModelTitle
+            )
         }
     }
     return PreviewHost()

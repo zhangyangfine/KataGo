@@ -11,6 +11,7 @@ import KataGoInterface
 
 struct ContentView: View {
     @Binding var selectedModel: NeuralNetworkModel?
+    let engineLifecycle: EngineLifecycle
 
     @State var stones = Stones()
     @State var messageList = MessageList()
@@ -71,12 +72,25 @@ struct ContentView: View {
     private func initializationTask() async {
         messageList.messages.append(Message(text: "Initializing..."))
         messageList.appendAndSend(command: "version")
-        
+
         version = await Task.detached {
             // Get a message line from KataGo
             return KataGoHelper.getMessageLine()
         }.value
-        
+
+        // Crash-loop recovery signal: the first line Swift sees from KataGo is
+        // the engine's reply to `version`, which proves model loading finished
+        // and the GTP loop is running. Clearing the sentinel here (via
+        // `EngineLifecycle`) is what tells `ModelRunnerView` the load
+        // succeeded. This relies on `KataGoCpp.cpp` redirecting only `cout`
+        // (not `cerr`/logger) — any future change that lets KataGo print to
+        // `cout` before the GTP loop would need to re-validate this check.
+        // Long-term fix: run the engine out-of-process via XPC so a crash
+        // can't take the app down at all.
+        if let response = version, response.hasPrefix("= ") {
+            engineLifecycle.markFirstResponse(modelTitle: selectedModel?.title ?? "")
+        }
+
         sendInitialCommands(config: gameRecords.first?.concreteConfig)
         navigationContext.selectedGameRecord = gameRecords.first
         navigationContext.selectedGameRecord?.updateToLatestVersion()

@@ -248,6 +248,8 @@
 		E15F54872C94427C00A698D0 /* KataGoShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = E15F54862C94427C00A698D0 /* KataGoShortcuts.swift */; };
 		E160DEEC2E2540B1004B065F /* LinePlotView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E160DEEB2E2540B1004B065F /* LinePlotView.swift */; };
 		E16BC8292C48083900EA3A1E /* NavigationContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = E16BC8282C48083900EA3A1E /* NavigationContext.swift */; };
+		CC00000000000000E16F0001 /* EngineLifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00000000000000E16F0002 /* EngineLifecycle.swift */; };
+		CC00000000000000E16F0003 /* EngineLifecycleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00000000000000E16F0004 /* EngineLifecycleTests.swift */; };
 		E16BC8392C4CB2FF00EA3A1E /* sgfmetadata.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E16BC8382C4CB2FF00EA3A1E /* sgfmetadata.cpp */; };
 		E16BC83D2C4D2B2C00EA3A1E /* b18c384nbt-humanv0.bin.gz in Resources */ = {isa = PBXBuildFile; fileRef = E16BC83C2C4D2B2C00EA3A1E /* b18c384nbt-humanv0.bin.gz */; };
 		E16E1F372DE16C5B00B0F144 /* NeuralNetworkModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E16E1F362DE16C5B00B0F144 /* NeuralNetworkModel.swift */; };
@@ -832,6 +834,8 @@
 
 		E160DEEB2E2540B1004B065F /* LinePlotView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinePlotView.swift; sourceTree = "<group>"; };
 		E16BC8282C48083900EA3A1E /* NavigationContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationContext.swift; sourceTree = "<group>"; };
+		CC00000000000000E16F0002 /* EngineLifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineLifecycle.swift; sourceTree = "<group>"; };
+		CC00000000000000E16F0004 /* EngineLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineLifecycleTests.swift; sourceTree = "<group>"; };
 		E16BC8382C4CB2FF00EA3A1E /* sgfmetadata.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = sgfmetadata.cpp; sourceTree = "<group>"; };
 		E16BC83C2C4D2B2C00EA3A1E /* b18c384nbt-humanv0.bin.gz */ = {isa = PBXFileReference; lastKnownFileType = archive.gzip; path = "b18c384nbt-humanv0.bin.gz"; sourceTree = "<group>"; };
 		E16E1F362DE16C5B00B0F144 /* NeuralNetworkModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeuralNetworkModel.swift; sourceTree = "<group>"; };
@@ -1531,6 +1535,7 @@
 				E12A6E9E2C322E020002DED0 /* ConfigModel.swift */,
 				E16E1F3A2DE2C97A00B0F144 /* DebugUtils.swift */,
 				E16E1F382DE2AA8300B0F144 /* Downloader.swift */,
+				CC00000000000000E16F0002 /* EngineLifecycle.swift */,
 				E14753582C3A5A440066DE29 /* GameRecord.swift */,
 				E15A218E2ECAAB5600708C25 /* GobanState.swift */,
 				E15CEE362DCCF9B400D78AE3 /* HumanSLModel.swift */,
@@ -1605,6 +1610,7 @@
 				E1BB32A62C721A8300690E67 /* ConfigModelTests.swift */,
 				E1BB32A82C72B73800690E67 /* GameRecordTests.swift */,
 				E1BB32AA2D95E00000690E67 /* BookLookupTests.swift */,
+				CC00000000000000E16F0004 /* EngineLifecycleTests.swift */,
 			);
 			path = "KataGo iOSTests";
 			sourceTree = "<group>";
@@ -2693,6 +2699,7 @@
 				E16E1F392DE2AA8400B0F144 /* Downloader.swift in Sources */,
 				E1240BB02C6D640200B4874F /* LoadingView.swift in Sources */,
 				E16BC8292C48083900EA3A1E /* NavigationContext.swift in Sources */,
+				CC00000000000000E16F0001 /* EngineLifecycle.swift in Sources */,
 				E140C38B2C5923FD002D2EB1 /* NameEditorView.swift in Sources */,
 				E1C6D0C72CDF0E38002C1921 /* GameLinkView.swift in Sources */,
 				E18F3E112A51466A00D335E1 /* KataGo_iOSApp.swift in Sources */,
@@ -2738,6 +2745,7 @@
 				E1BB32A92C72B73800690E67 /* GameRecordTests.swift in Sources */,
 				E1BB32A72C721A8300690E67 /* ConfigModelTests.swift in Sources */,
 				E1BB32AB2D95E00000690E67 /* BookLookupTests.swift in Sources */,
+				CC00000000000000E16F0003 /* EngineLifecycleTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
