@@ -56,6 +56,7 @@ struct ModelDetailView: View {
     var model: NeuralNetworkModel
     @State var downloader: Downloader
     @State var isDownloaded = false
+    @State private var isShowingConfigSheet = false
     @Binding var selectedModel: NeuralNetworkModel?
 
     func downloadPlayButton(model: NeuralNetworkModel) -> some View {
@@ -106,6 +107,15 @@ struct ModelDetailView: View {
                     downloadPlayButton(model: model)
                     Spacer()
 
+                    #if os(macOS)
+                    Button {
+                        isShowingConfigSheet = true
+                    } label: {
+                        Image(systemName: "gearshape")
+                    }
+                    .accessibilityLabel("Backend Settings")
+                    #endif
+
                     if !model.builtIn && isDownloaded {
                         ModelTrashButton(
                             model: model,
@@ -142,6 +152,9 @@ struct ModelDetailView: View {
                     isDownloaded = true
                 }
             }
+        }
+        .sheet(isPresented: $isShowingConfigSheet) {
+            BackendConfigSheet(model: model)
         }
         .navigationTitle(model.title)
     }
