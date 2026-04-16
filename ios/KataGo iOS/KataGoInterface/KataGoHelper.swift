@@ -12,14 +12,39 @@ public class KataGoHelper {
 #if os(macOS)
     static let metalNumSearchThreads = 16
     static let metalNnMaxBatchSize = 8
-    static let metalDeviceToUse = 0       // GPU (MPSGraph) on macOS
 #else
     static let metalNumSearchThreads = 2
     static let metalNnMaxBatchSize = 1
-    static let metalDeviceToUse = 100     // ANE (Neural Engine) on iOS/visionOS
 #endif
 
-    public class func runGtp(modelPath: String? = nil) {
+#if os(macOS)
+    // macOS default: 0 = GPU (MPSGraph)
+    public class func runGtp(modelPath: String? = nil,
+                             metalDeviceToUse: Int = 0,
+                             maxBoardSizeForNNBuffer: Int = 37,
+                             requireExactNNLen: Bool = false) {
+        runGtpImpl(modelPath: modelPath,
+                   metalDeviceToUse: metalDeviceToUse,
+                   maxBoardSizeForNNBuffer: maxBoardSizeForNNBuffer,
+                   requireExactNNLen: requireExactNNLen)
+    }
+#else
+    // iOS/visionOS default: 100 = ANE (Neural Engine) via CoreML
+    public class func runGtp(modelPath: String? = nil,
+                             metalDeviceToUse: Int = 100,
+                             maxBoardSizeForNNBuffer: Int = 37,
+                             requireExactNNLen: Bool = false) {
+        runGtpImpl(modelPath: modelPath,
+                   metalDeviceToUse: metalDeviceToUse,
+                   maxBoardSizeForNNBuffer: maxBoardSizeForNNBuffer,
+                   requireExactNNLen: requireExactNNLen)
+    }
+#endif
+
+    private class func runGtpImpl(modelPath: String?,
+                                  metalDeviceToUse: Int,
+                                  maxBoardSizeForNNBuffer: Int,
+                                  requireExactNNLen: Bool) {
         let mainBundle = Bundle.main
         let modelName = "default_model"
         let modelExt = "bin.gz"
@@ -44,7 +69,9 @@ public class KataGoHelper {
                      std.string(configPath ?? "Contents/Resources/default_gtp.cfg"),
                      Int32(metalDeviceToUse),
                      Int32(metalNumSearchThreads),
-                     Int32(metalNnMaxBatchSize))
+                     Int32(metalNnMaxBatchSize),
+                     Int32(maxBoardSizeForNNBuffer),
+                     requireExactNNLen)
     }
 
     public class func getMessageLine() -> String {
