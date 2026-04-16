@@ -15,6 +15,7 @@ struct GameSplitView: View {
 
     @Binding var aiMove: String?
     @Binding var quitStatus: QuitStatus
+    let maxBoardLength: Int
 
     @State var columnVisibility: NavigationSplitViewVisibility = .detailOnly
     @State private var isEditorPresented = false
@@ -81,7 +82,7 @@ struct GameSplitView: View {
             .toolbar {
                 GameListToolbar(
                     gameRecord: navigationContext.selectedGameRecord,
-                    maxBoardLength: selectedModel?.nnLen ?? 19,
+                    maxBoardLength: maxBoardLength,
                     quitStatus: $quitStatus
                 )
             }
@@ -150,7 +151,7 @@ struct GameSplitView: View {
         @Bindable var gobanState = gobanState
 
         return GobanView(isEditorPresented: $isEditorPresented,
-                         maxBoardLength: selectedModel?.nnLen ?? 19,
+                         maxBoardLength: maxBoardLength,
                          columnVisibility: $columnVisibility)
         .confirmationDialog(
             "Do you allow AI overwriting this move?",

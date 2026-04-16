@@ -19,6 +19,7 @@ struct ModelRunnerView: View {
     @State private var katagoThread: Thread?
     @State private var engineLifecycle = EngineLifecycle()
     @State private var hasDecidedRecovery = false
+    @State private var launchedMaxBoardLength: Int = 19
     @AppStorage("ModelRunnerView.selectedModelTitle") private var selectedModelTitle = ""
     @AppStorage("ModelRunnerView.pendingLoadModelTitle") private var pendingLoadModelTitle = ""
 
@@ -27,7 +28,8 @@ struct ModelRunnerView: View {
             if let selectedModel {
                 ContentView(
                     selectedModel: $selectedModel,
-                    engineLifecycle: engineLifecycle
+                    engineLifecycle: engineLifecycle,
+                    maxBoardLength: launchedMaxBoardLength
                 )
             } else {
                 ModelPickerView(
@@ -92,6 +94,7 @@ struct ModelRunnerView: View {
             UserDefaults.standard.synchronize()
 
             let settings = BackendSettings(model: newValue)
+            launchedMaxBoardLength = settings.effectiveMaxBoardLength
             startKataGoThread(
                 modelPath: modelPath,
                 metalDeviceToUse: settings.backend.metalDeviceToUse,

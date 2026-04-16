@@ -12,6 +12,7 @@ import KataGoInterface
 struct ContentView: View {
     @Binding var selectedModel: NeuralNetworkModel?
     let engineLifecycle: EngineLifecycle
+    let maxBoardLength: Int
 
     @State var stones = Stones()
     @State var messageList = MessageList()
@@ -42,7 +43,8 @@ struct ContentView: View {
             GameSplitView(
                 selectedModel: $selectedModel,
                 aiMove: $aiMove,
-                quitStatus: $quitStatus
+                quitStatus: $quitStatus,
+                maxBoardLength: maxBoardLength
             )
             .environment(stones)
             .environment(messageList)
