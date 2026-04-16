@@ -72,7 +72,9 @@ void KataGoRunGtp(string modelPath,
                   string configPath,
                   int metalDeviceToUse,
                   int numSearchThreads,
-                  int nnMaxBatchSize) {
+                  int nnMaxBatchSize,
+                  int maxBoardSizeForNNBuffer,
+                  bool requireExactNNLen) {
     // Replace the global cout object with the custom one
     cout.rdbuf(&tsbFromKataGo);
 
@@ -93,6 +95,8 @@ void KataGoRunGtp(string modelPath,
     subArgs.push_back(string("-override-config metalUseFP16=true"));
     subArgs.push_back(string("-override-config numSearchThreads=") + to_string(numSearchThreads));
     subArgs.push_back(string("-override-config nnMaxBatchSize=") + to_string(nnMaxBatchSize));
+    subArgs.push_back(string("-override-config maxBoardSizeForNNBuffer=") + to_string(maxBoardSizeForNNBuffer));
+    subArgs.push_back(string("-override-config requireMaxBoardSize=") + (requireExactNNLen ? "true" : "false"));
     MainCmds::gtp(subArgs);
 }
 

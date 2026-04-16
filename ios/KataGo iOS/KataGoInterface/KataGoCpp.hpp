@@ -17,7 +17,9 @@ void KataGoRunGtp(string modelPath,
                   string configPath,
                   int metalDeviceToUse,
                   int numSearchThreads,
-                  int nnMaxBatchSize);
+                  int nnMaxBatchSize,
+                  int maxBoardSizeForNNBuffer,
+                  bool requireExactNNLen);
 
 string KataGoGetMessageLine();
 void KataGoSendCommand(string command);
