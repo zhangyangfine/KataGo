@@ -250,6 +250,7 @@
 		E16BC8292C48083900EA3A1E /* NavigationContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = E16BC8282C48083900EA3A1E /* NavigationContext.swift */; };
 		CC00000000000000E16F0001 /* EngineLifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00000000000000E16F0002 /* EngineLifecycle.swift */; };
 		CC00000000000000E16F0003 /* EngineLifecycleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00000000000000E16F0004 /* EngineLifecycleTests.swift */; };
+		CC00000000000000BC000001 /* BackendChoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC00000000000000BC000002 /* BackendChoice.swift */; };
 		E16BC8392C4CB2FF00EA3A1E /* sgfmetadata.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E16BC8382C4CB2FF00EA3A1E /* sgfmetadata.cpp */; };
 		E16BC83D2C4D2B2C00EA3A1E /* b18c384nbt-humanv0.bin.gz in Resources */ = {isa = PBXBuildFile; fileRef = E16BC83C2C4D2B2C00EA3A1E /* b18c384nbt-humanv0.bin.gz */; };
 		E16E1F372DE16C5B00B0F144 /* NeuralNetworkModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E16E1F362DE16C5B00B0F144 /* NeuralNetworkModel.swift */; };
@@ -836,6 +837,7 @@
 		E16BC8282C48083900EA3A1E /* NavigationContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationContext.swift; sourceTree = "<group>"; };
 		CC00000000000000E16F0002 /* EngineLifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineLifecycle.swift; sourceTree = "<group>"; };
 		CC00000000000000E16F0004 /* EngineLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineLifecycleTests.swift; sourceTree = "<group>"; };
+		CC00000000000000BC000002 /* BackendChoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendChoice.swift; sourceTree = "<group>"; };
 		E16BC8382C4CB2FF00EA3A1E /* sgfmetadata.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = sgfmetadata.cpp; sourceTree = "<group>"; };
 		E16BC83C2C4D2B2C00EA3A1E /* b18c384nbt-humanv0.bin.gz */ = {isa = PBXFileReference; lastKnownFileType = archive.gzip; path = "b18c384nbt-humanv0.bin.gz"; sourceTree = "<group>"; };
 		E16E1F362DE16C5B00B0F144 /* NeuralNetworkModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeuralNetworkModel.swift; sourceTree = "<group>"; };
@@ -1530,6 +1532,7 @@
 			isa = PBXGroup;
 			children = (
 				E10C8BAC2C80BECE00477A7B /* AudioModel.swift */,
+				CC00000000000000BC000002 /* BackendChoice.swift */,
 				E1A2B3C42F0A1B2C00AABB01 /* BookLookup.swift */,
 				E15A21CB2EDC4CEA00708C25 /* Commentator.swift */,
 				E12A6E9E2C322E020002DED0 /* ConfigModel.swift */,
@@ -2700,6 +2703,7 @@
 				E1240BB02C6D640200B4874F /* LoadingView.swift in Sources */,
 				E16BC8292C48083900EA3A1E /* NavigationContext.swift in Sources */,
 				CC00000000000000E16F0001 /* EngineLifecycle.swift in Sources */,
+				CC00000000000000BC000001 /* BackendChoice.swift in Sources */,
 				E140C38B2C5923FD002D2EB1 /* NameEditorView.swift in Sources */,
 				E1C6D0C72CDF0E38002C1921 /* GameLinkView.swift in Sources */,
 				E18F3E112A51466A00D335E1 /* KataGo_iOSApp.swift in Sources */,
