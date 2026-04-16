@@ -41,14 +41,14 @@ enum CoreMLBoardSize: Int, CaseIterable, Identifiable {
 }
 
 struct BackendSettings {
-    private let modelFileName: String
+    private let model: NeuralNetworkModel
 
-    init(modelFileName: String) {
-        self.modelFileName = modelFileName
+    init(model: NeuralNetworkModel) {
+        self.model = model
     }
 
-    var backendKey: String { "backend_\(modelFileName)" }
-    var boardSizeKey: String { "coremlBoardSize_\(modelFileName)" }
+    private var backendKey: String { "backend_\(model.fileName)" }
+    private var boardSizeKey: String { "coremlBoardSize_\(model.fileName)" }
 
     var backend: BackendChoice {
         get {
@@ -78,8 +78,8 @@ struct BackendSettings {
 
     var effectiveMaxBoardLength: Int {
         switch backend {
-        case .coremlNE: return coremlBoardSize.rawValue
-        case .mpsGPU: return 37
+        case .coremlNE: return min(coremlBoardSize.rawValue, model.nnLen)
+        case .mpsGPU: return model.nnLen
         }
     }
 
