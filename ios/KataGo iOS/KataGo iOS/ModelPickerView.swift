@@ -105,16 +105,15 @@ struct ModelDetailView: View {
                         .foregroundStyle(.secondary)
 
                     downloadPlayButton(model: model)
-                    Spacer()
 
-                    #if os(macOS)
                     Button {
                         isShowingConfigSheet = true
                     } label: {
                         Image(systemName: "gearshape")
                     }
                     .accessibilityLabel("Backend Settings")
-                    #endif
+
+                    Spacer()
 
                     if !model.builtIn && isDownloaded {
                         ModelTrashButton(
@@ -162,7 +161,6 @@ struct ModelDetailView: View {
 
 struct ModelPickerView: View {
     @State private var selectedModelID: UUID?
-    @State private var configSheetModel: NeuralNetworkModel?
     @Environment(\.modelContext) private var modelContext
 
     // Final selected model
@@ -202,22 +200,11 @@ struct ModelPickerView: View {
                                     }
                                 }
                             }
-                            .swipeActions(edge: .trailing) {
-                                Button {
-                                    configSheetModel = model
-                                } label: {
-                                    Label("Settings", systemImage: "gearshape")
-                                }
-                                .tint(.gray)
-                            }
                         }
                     }
                 }
             }
             .navigationTitle("Select a Model")
-            .sheet(item: $configSheetModel) { model in
-                BackendConfigSheet(model: model)
-            }
         }
         .onOpenURL { url in
             if let result = GameRecord.importGameRecord(from: url, in: modelContext) {
