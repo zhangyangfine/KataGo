@@ -91,7 +91,13 @@ struct ModelRunnerView: View {
             pendingLoadModelTitle = newValue.title
             UserDefaults.standard.synchronize()
 
-            startKataGoThread(modelPath: modelPath)
+            let settings = BackendSettings(model: newValue)
+            startKataGoThread(
+                modelPath: modelPath,
+                metalDeviceToUse: settings.backend.metalDeviceToUse,
+                maxBoardSizeForNNBuffer: settings.effectiveMaxBoardLength,
+                requireExactNNLen: settings.requireExactNNLen
+            )
         }
         .onChange(of: engineLifecycle.lastLoadedModelTitle) { _, newValue in
             guard let newValue else { return }
@@ -100,9 +106,15 @@ struct ModelRunnerView: View {
         }
     }
 
-    private func startKataGoThread(modelPath: String) {
+    private func startKataGoThread(modelPath: String,
+                                   metalDeviceToUse: Int,
+                                   maxBoardSizeForNNBuffer: Int,
+                                   requireExactNNLen: Bool) {
         let katagoThread = Thread {
-            KataGoHelper.runGtp(modelPath: modelPath)
+            KataGoHelper.runGtp(modelPath: modelPath,
+                                metalDeviceToUse: metalDeviceToUse,
+                                maxBoardSizeForNNBuffer: maxBoardSizeForNNBuffer,
+                                requireExactNNLen: requireExactNNLen)
 
             Task {
                 await MainActor.run {
