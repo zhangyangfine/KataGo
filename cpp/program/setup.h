@@ -124,6 +124,8 @@ namespace Setup {
   //Get sets of options that are mutually exclusive. Intended for use in configParser
   std::vector<std::pair<std::set<std::string>,std::set<std::string>>> getMutexKeySets();
 
+  void resolveNNBufferSize(ConfigParser& cfg, const std::string& idxStr, int& nnXLen, int& nnYLen);
+
   //Load pattern bonus tables that avoid repeating moves that the user supplied in external sgfs
   std::vector<std::unique_ptr<PatternBonusTable>> loadAvoidSgfPatternBonusTables(ConfigParser& cfg, Logger& logger);
   //Save patterns to avoid repeating in the future. Returns whether saving was successful or not.

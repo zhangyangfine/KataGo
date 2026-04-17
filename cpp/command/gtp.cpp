@@ -474,6 +474,10 @@ struct GTPEngine {
       nnYLen = Board::MAX_LEN;
     }
 
+    // Apply maxBoardSizeForNNBuffer overrides so the comparison below uses the
+    // effective NN dimensions rather than the raw board size.
+    Setup::resolveNNBufferSize(cfg, "0", nnXLen, nnYLen);
+
     //If the neural net is wrongly sized, we need to create or recreate it
     if(nnEval == NULL || !(nnXLen == nnEval->getNNXLen() && nnYLen == nnEval->getNNYLen())) {
 
